@@ -107,7 +107,13 @@ export default async function RootLayout({
           dangerouslySetInnerHTML={{ __html: THEME_BOOT_SCRIPT }}
         />
       </head>
-      <body className="min-h-full bg-background text-foreground font-sans">
+      <body
+        className="min-h-full bg-background text-foreground font-sans"
+        // Extensions (e.g. ClickUp) can inject classes onto <body>
+        // before hydration; suppress the expected mismatch the same
+        // way the theme boot does on <html> above.
+        suppressHydrationWarning
+      >
         <NextIntlClientProvider messages={messages} locale={locale}>
           <ThemeProvider>
             {children}

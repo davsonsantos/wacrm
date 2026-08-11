@@ -359,8 +359,8 @@ export function ContactDetailView({
 
       toast.success(t('toastTemplateSent', { name: template.name }));
     } catch (err) {
-      const reason = err instanceof Error ? err.message : 'network error';
-      toast.error(`Failed to send template: ${reason}`);
+      const reason = err instanceof Error ? err.message : 'erro de rede';
+      toast.error(`Falha ao enviar o modelo: ${reason}`);
     } finally {
       setSendingTemplate(false);
     }

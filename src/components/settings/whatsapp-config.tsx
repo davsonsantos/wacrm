@@ -159,7 +159,7 @@ export function WhatsAppConfig() {
       }
     } catch (err) {
       console.error('fetchConfig error:', err);
-      toast.error('Failed to load WhatsApp configuration');
+      toast.error('Falha ao carregar a configuração do WhatsApp');
     } finally {
       setLoading(false);
     }
@@ -184,11 +184,11 @@ export function WhatsAppConfig() {
 
   async function handleSave() {
     if (!phoneNumberId.trim()) {
-      toast.error('Phone Number ID is required');
+      toast.error('Phone Number ID é obrigatório');
       return;
     }
     if (!config && (!accessToken.trim() || !tokenEdited)) {
-      toast.error('Access Token is required for initial setup');
+      toast.error('Access Token é obrigatório para a configuração inicial');
       return;
     }
 
@@ -216,7 +216,7 @@ export function WhatsAppConfig() {
         // server. But our POST handler requires an access_token to verify
         // with Meta. If the user didn't change the token, we need to signal
         // that. Simplest: require token re-entry if they're updating.
-        toast.error('Please re-enter the Access Token to save changes');
+        toast.error('Digite novamente o Access Token para salvar as alterações');
         setSaving(false);
         return;
       }
@@ -230,7 +230,7 @@ export function WhatsAppConfig() {
       const data = await res.json();
 
       if (!res.ok) {
-        toast.error(data.error || 'Failed to save configuration');
+        toast.error(data.error || 'Falha ao salvar a configuração');
         setSaving(false);
         return;
       }
@@ -243,7 +243,7 @@ export function WhatsAppConfig() {
       //                         is human-readable from Meta.
       if (data.registered === false && data.registration_error) {
         toast.error(
-          `Saved, but Meta couldn't register the number: ${data.registration_error}`,
+          `Salvo, mas a Meta não conseguiu registrar o número: ${data.registration_error}`,
           { duration: 12000 },
         );
       } else if (data.registration_skipped) {
@@ -252,15 +252,15 @@ export function WhatsAppConfig() {
         // Don't claim the number is "Live" — point at the
         // Registration status banner instead.
         toast.success(
-          'Credentials saved and verified. Inbound registration was skipped (no PIN) — see Registration status below.',
+          'Credenciais salvas e verificadas. O registro de entrada foi ignorado (sem PIN) — veja o status de Registro abaixo.',
           { duration: 10000 },
         );
         setPin('');
       } else {
         toast.success(
           data.phone_info?.verified_name
-            ? `Live — ${data.phone_info.verified_name} can now receive events.`
-            : 'WhatsApp connected. Events will start flowing within a minute.',
+            ? `No ar — ${data.phone_info.verified_name} agora pode receber eventos.`
+            : 'WhatsApp conectado. Os eventos começarão a chegar em até um minuto.',
         );
         // Clear the PIN so subsequent saves don't accidentally
         // re-register (which would void the active subscription if
@@ -271,7 +271,7 @@ export function WhatsAppConfig() {
       if (accountId) await fetchConfig(accountId);
     } catch (err) {
       console.error('Save error:', err);
-      toast.error('Failed to save configuration');
+      toast.error('Falha ao salvar a configuração');
     } finally {
       setSaving(false);
     }
@@ -289,19 +289,19 @@ export function WhatsAppConfig() {
         setStatusMessage('');
         toast.success(
           payload.phone_info?.verified_name
-            ? `Connected to ${payload.phone_info.verified_name}`
-            : 'API connection successful'
+            ? `Conectado a ${payload.phone_info.verified_name}`
+            : 'Conexão com a API bem-sucedida'
         );
       } else {
         setConnectionStatus('disconnected');
         setResetReason(payload.needs_reset ? 'token_corrupted' : payload.reason === 'meta_api_error' ? 'meta_api_error' : null);
         setStatusMessage(payload.message || '');
-        toast.error(payload.message || 'API connection failed');
+        toast.error(payload.message || 'Falha na conexão com a API');
       }
     } catch (err) {
       console.error('Test connection error:', err);
       setConnectionStatus('disconnected');
-      toast.error('Connection test failed. Check network and try again.');
+      toast.error('Falha no teste de conexão. Verifique a rede e tente novamente.');
     } finally {
       setTesting(false);
     }
@@ -317,24 +317,24 @@ export function WhatsAppConfig() {
       const data = (await res.json()) as RegistrationProbe;
       setRegistrationProbe(data);
       if (data.live) {
-        toast.success('Number is fully wired — Meta is delivering events.');
+        toast.success('Número totalmente conectado — a Meta está entregando eventos.');
       } else {
         toast.error(
-          'Number is not fully registered. See the checks below for which step failed.',
+          'O número não está totalmente registrado. Veja as verificações abaixo para saber qual etapa falhou.',
           { duration: 8000 },
         );
       }
       if (accountId) await fetchConfig(accountId);
     } catch (err) {
       console.error('verify-registration failed:', err);
-      toast.error('Could not reach the verification endpoint.');
+      toast.error('Não foi possível acessar o endpoint de verificação.');
     } finally {
       setVerifyingRegistration(false);
     }
   }
 
   async function handleReset() {
-    if (!confirm('This will delete the current WhatsApp config so you can re-enter it. Continue?')) {
+    if (!confirm('Isso excluirá a configuração atual do WhatsApp para que você possa digitá-la novamente. Continuar?')) {
       return;
     }
 
@@ -344,11 +344,11 @@ export function WhatsAppConfig() {
       const data = await res.json();
 
       if (!res.ok) {
-        toast.error(data.error || 'Failed to reset configuration');
+        toast.error(data.error || 'Falha ao redefinir a configuração');
         return;
       }
 
-      toast.success('Configuration cleared. You can now re-enter your credentials.');
+      toast.success('Configuração limpa. Agora você pode digitar suas credenciais novamente.');
       setConfig(null);
       setPhoneNumberId('');
       setWabaId('');
@@ -360,7 +360,7 @@ export function WhatsAppConfig() {
       setStatusMessage('');
     } catch (err) {
       console.error('Reset error:', err);
-      toast.error('Failed to reset configuration');
+      toast.error('Falha ao redefinir a configuração');
     } finally {
       setResetting(false);
     }
@@ -368,7 +368,7 @@ export function WhatsAppConfig() {
 
   function handleCopyWebhookUrl() {
     navigator.clipboard.writeText(webhookUrl);
-    toast.success('Webhook URL copied to clipboard');
+    toast.success('URL do webhook copiada para a área de transferência');
   }
 
   if (loading) {
@@ -403,7 +403,7 @@ export function WhatsAppConfig() {
               <AlertTriangle className="size-5 text-amber-400 mt-0.5 shrink-0" />
               <div className="flex-1">
                 <AlertTitle className="text-amber-200 mb-1">
-                  Stored token can&apos;t be decrypted
+                  O token armazenado não pode ser descriptografado
                 </AlertTitle>
                 <AlertDescription className="text-amber-100/80 text-sm">
                   {statusMessage}

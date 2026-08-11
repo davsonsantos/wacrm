@@ -214,9 +214,9 @@ export function ImportModal({
         data: { session },
       } = await supabase.auth.getSession();
       const user = session?.user;
-      if (!user) throw new Error('Not authenticated');
+      if (!user) throw new Error('Não autenticado');
       if (!accountId)
-        throw new Error('Your profile is not linked to an account.');
+        throw new Error('Seu perfil não está vinculado a uma conta.');
 
       let imported = 0;
       let skipped = 0;
@@ -352,7 +352,7 @@ export function ImportModal({
       if (skippedNames.length > 0) {
         const sample = skippedNames.slice(0, 3).join(', ');
         const more =
-          skippedNames.length > 3 ? ` (+${skippedNames.length - 3} more)` : '';
+          skippedNames.length > 3 ? ` (+${skippedNames.length - 3} mais)` : '';
         toast.info(t('toastTagsSkipped', { sample, more }));
       }
       if (skipped > 0) {

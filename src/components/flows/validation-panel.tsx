@@ -109,7 +109,7 @@ export function IssueLine({
           "flex w-full items-start gap-2 rounded-md px-2 py-1 text-left text-xs transition-colors hover:bg-muted/60",
           tone,
         )}
-        aria-label={t ? t("jumpToNode", { key: issue.node_key! }) : `Jump to node ${issue.node_key}`}
+        aria-label={t ? t("jumpToNode", { key: issue.node_key! }) : `Ir para o nó ${issue.node_key}`}
       >
         {body}
       </button>
