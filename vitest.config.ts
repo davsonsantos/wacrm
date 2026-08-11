@@ -15,6 +15,8 @@ export default defineConfig({
       ENCRYPTION_KEY:
         "0000000000000000000000000000000000000000000000000000000000000000",
       META_APP_SECRET: "test-meta-app-secret",
+      EVOLUTION_API_BASE_URL: "https://evolution.test",
+      EVOLUTION_GLOBAL_API_KEY: "test-global-key",
     },
     clearMocks: true,
   },
