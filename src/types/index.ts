@@ -285,6 +285,12 @@ export interface WhatsAppConfig {
   subscribed_apps_at?: string;
   /** Last error from /register; cleared on success. */
   last_registration_error?: string;
+  /**
+   * Which WhatsApp connection this row uses. Defaults to 'meta' in the
+   * database (migration 039_evolution_provider). 'evolution' rows use
+   * the evolution_instance_* columns instead of phone_number_id/etc.
+   */
+  provider?: 'meta' | 'evolution';
 }
 
 // Raw Meta status enum. We persist this verbatim from Meta (sync + webhook)
