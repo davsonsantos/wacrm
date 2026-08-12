@@ -327,6 +327,8 @@
       "noContactsYet": "Nenhum contato ainda.",
       "addFirstContact": "Adicionar seu primeiro contato",
       "unnamed": "Sem nome",
+      "sendMessageAction": "Enviar mensagem",
+      "sendMessageGated": "Somente leitura — sua função não pode enviar mensagens",
       "editAction": "Editar",
       "deleteAction": "Excluir",
       "showingPagination": "Mostrando {start}-{end} de {total}",

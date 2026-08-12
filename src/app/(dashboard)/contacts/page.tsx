@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { createClient } from '@/lib/supabase/client';
+import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import type { Contact, Tag, ContactTag } from '@/types';
 import { Button } from '@/components/ui/button';
@@ -40,6 +41,7 @@ import {
   Plus,
   Upload,
   MoreHorizontal,
+  MessageSquare,
   Pencil,
   Trash2,
   Loader2,
@@ -67,6 +69,7 @@ interface ContactWithTags extends Contact {
 export default function ContactsPage() {
   const t = useTranslations('Contacts.page');
   const supabase = createClient();
+  const router = useRouter();
   const canEdit = useCan('send-messages');
   const canEditSettings = useCan('edit-settings');
 
@@ -247,6 +250,23 @@ export default function ContactsPage() {
   function confirmDelete(contact: Contact) {
     setDeleteTarget(contact);
     setDeleteConfirmOpen(true);
+  }
+
+  async function handleSendMessage(contact: ContactWithTags) {
+    try {
+      const res = await fetch(`/api/contacts/${contact.id}/conversation`, {
+        method: 'POST',
+      });
+      const body = await res.json();
+      if (!res.ok) {
+        throw new Error(body.error || 'Failed to open conversation');
+      }
+      router.push(`/inbox?c=${body.conversation_id}`);
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : 'Failed to open conversation',
+      );
+    }
   }
 
   async function handleDelete() {
@@ -662,6 +682,20 @@ export default function ContactsPage() {
                         align="end"
                         className="bg-popover border-border"
                       >
+                        <DropdownMenuItem
+                          disabled={!canEdit}
+                          title={!canEdit ? t('sendMessageGated') : undefined}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (!canEdit) return;
+                            handleSendMessage(contact);
+                          }}
+                          className="text-popover-foreground focus:bg-muted focus:text-foreground"
+                        >
+                          <MessageSquare className="size-4" />
+                          {t('sendMessageAction')}
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator className="bg-border" />
                         <DropdownMenuItem
                           onClick={(e) => {
                             e.stopPropagation();

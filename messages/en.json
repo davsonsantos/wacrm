@@ -327,6 +327,8 @@
       "noContactsYet": "No contacts yet.",
       "addFirstContact": "Add your first contact",
       "unnamed": "Unnamed",
+      "sendMessageAction": "Send message",
+      "sendMessageGated": "Read-only — your role can't send messages",
       "editAction": "Edit",
       "deleteAction": "Delete",
       "showingPagination": "Showing {start}-{end} of {total}",
