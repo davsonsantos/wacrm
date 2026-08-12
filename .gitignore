@@ -39,6 +39,12 @@ yarn-error.log*
 # vercel
 .vercel
 
+# Claude Code git worktrees — each is its own nested git repo; without
+# this, `git add -A` from the main checkout root records one as a
+# stray gitlink (mode 160000) pointing at whatever commit it happened
+# to be on, which breaks `git clone`/`git submodule` for anyone else.
+.claude/worktrees/
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts
