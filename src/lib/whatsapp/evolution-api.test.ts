@@ -160,3 +160,35 @@ describe("evolution-api", () => {
     ).rejects.toThrow(/Invalid or missing API key/);
   });
 });
+
+// This module is imported at the top level by Meta-only code paths too
+// (send-message.ts, the Evolution webhook route) — the env vars are
+// documented as optional, so importing this module must never throw on
+// its own. Only an actual Evolution Go call should require them.
+describe("evolution-api — env vars are read lazily, not at import time", () => {
+  const originalBaseUrl = process.env.EVOLUTION_API_BASE_URL;
+  const originalGlobalKey = process.env.EVOLUTION_GLOBAL_API_KEY;
+
+  afterEach(() => {
+    process.env.EVOLUTION_API_BASE_URL = originalBaseUrl;
+    process.env.EVOLUTION_GLOBAL_API_KEY = originalGlobalKey;
+    vi.resetModules();
+  });
+
+  it("imports cleanly with both env vars unset", async () => {
+    delete process.env.EVOLUTION_API_BASE_URL;
+    delete process.env.EVOLUTION_GLOBAL_API_KEY;
+    vi.resetModules();
+    await expect(import("./evolution-api")).resolves.toBeDefined();
+  });
+
+  it("only throws once an Evolution Go call is actually made", async () => {
+    delete process.env.EVOLUTION_API_BASE_URL;
+    delete process.env.EVOLUTION_GLOBAL_API_KEY;
+    vi.resetModules();
+    const mod = await import("./evolution-api");
+    await expect(
+      mod.createInstance({ name: "acct-1" }),
+    ).rejects.toThrow(/EVOLUTION_API_BASE_URL is required/);
+  });
+});

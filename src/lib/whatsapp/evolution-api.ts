@@ -13,6 +13,14 @@
  * needs to change.
  */
 
+/**
+ * Read lazily (call-time, not module-load-time): this module is
+ * imported by Meta-only routes too (e.g. send-message.ts), and
+ * these vars are documented as optional — only needed by accounts
+ * actually using Evolution Go. Reading them eagerly at module scope
+ * would crash every importer at load time on any deployment that
+ * hasn't set them, including pure-Meta ones.
+ */
 function requiredEnv(name: 'EVOLUTION_API_BASE_URL' | 'EVOLUTION_GLOBAL_API_KEY'): string {
   const value = process.env[name]
   if (!value) {
@@ -23,8 +31,9 @@ function requiredEnv(name: 'EVOLUTION_API_BASE_URL' | 'EVOLUTION_GLOBAL_API_KEY'
   return value
 }
 
-const EVOLUTION_API_BASE_URL = requiredEnv('EVOLUTION_API_BASE_URL')
-const EVOLUTION_GLOBAL_API_KEY = requiredEnv('EVOLUTION_GLOBAL_API_KEY')
+function evolutionApiBaseUrl(): string {
+  return requiredEnv('EVOLUTION_API_BASE_URL')
+}
 
 export interface EvolutionSendResult {
   messageId: string
@@ -47,7 +56,7 @@ async function throwEvolutionError(response: Response, fallback: string): Promis
 }
 
 function globalAuthHeaders(): Record<string, string> {
-  return { apikey: EVOLUTION_GLOBAL_API_KEY }
+  return { apikey: requiredEnv('EVOLUTION_GLOBAL_API_KEY') }
 }
 
 function instanceAuthHeaders(instanceToken: string): Record<string, string> {
@@ -68,7 +77,7 @@ export interface CreateInstanceResult {
 }
 
 export async function createInstance(args: CreateInstanceArgs): Promise<CreateInstanceResult> {
-  const response = await fetch(`${EVOLUTION_API_BASE_URL}/instance/create`, {
+  const response = await fetch(`${evolutionApiBaseUrl()}/instance/create`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...globalAuthHeaders() },
     body: JSON.stringify({ name: args.name }),
@@ -93,7 +102,7 @@ export interface ConnectInstanceArgs {
  */
 export async function connectInstance(args: ConnectInstanceArgs): Promise<void> {
   const { instanceToken, webhookUrl, subscribe } = args
-  const response = await fetch(`${EVOLUTION_API_BASE_URL}/instance/connect`, {
+  const response = await fetch(`${evolutionApiBaseUrl()}/instance/connect`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...instanceAuthHeaders(instanceToken) },
     body: JSON.stringify({ webhookUrl, subscribe, immediate: true }),
@@ -110,7 +119,7 @@ export interface GetQrCodeResult {
 }
 
 export async function getQrCode(args: { instanceToken: string }): Promise<GetQrCodeResult> {
-  const response = await fetch(`${EVOLUTION_API_BASE_URL}/instance/qr`, {
+  const response = await fetch(`${evolutionApiBaseUrl()}/instance/qr`, {
     headers: instanceAuthHeaders(args.instanceToken),
   })
   if (!response.ok) {
@@ -127,7 +136,7 @@ export interface GetInstanceStatusResult {
 }
 
 export async function getInstanceStatus(args: { instanceToken: string }): Promise<GetInstanceStatusResult> {
-  const response = await fetch(`${EVOLUTION_API_BASE_URL}/instance/status`, {
+  const response = await fetch(`${evolutionApiBaseUrl()}/instance/status`, {
     headers: instanceAuthHeaders(args.instanceToken),
   })
   if (!response.ok) {
@@ -138,7 +147,7 @@ export async function getInstanceStatus(args: { instanceToken: string }): Promis
 }
 
 export async function logoutInstance(args: { instanceToken: string }): Promise<void> {
-  const response = await fetch(`${EVOLUTION_API_BASE_URL}/instance/logout`, {
+  const response = await fetch(`${evolutionApiBaseUrl()}/instance/logout`, {
     method: 'DELETE',
     headers: instanceAuthHeaders(args.instanceToken),
   })
@@ -159,7 +168,7 @@ export interface SendTextMessageArgs {
 
 export async function sendTextMessage(args: SendTextMessageArgs): Promise<EvolutionSendResult> {
   const { instanceToken, to, text } = args
-  const response = await fetch(`${EVOLUTION_API_BASE_URL}/send/text`, {
+  const response = await fetch(`${evolutionApiBaseUrl()}/send/text`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...instanceAuthHeaders(instanceToken) },
     body: JSON.stringify({ number: to, text }),
@@ -185,7 +194,7 @@ export interface SendMediaMessageArgs {
 export async function sendMediaMessage(args: SendMediaMessageArgs): Promise<EvolutionSendResult> {
   const { instanceToken, to, kind, link, caption, filename } = args
   if (!link) throw new Error('sendMediaMessage requires a link.')
-  const response = await fetch(`${EVOLUTION_API_BASE_URL}/send/media`, {
+  const response = await fetch(`${evolutionApiBaseUrl()}/send/media`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...instanceAuthHeaders(instanceToken) },
     body: JSON.stringify({ number: to, type: kind, url: link, caption, filename }),
