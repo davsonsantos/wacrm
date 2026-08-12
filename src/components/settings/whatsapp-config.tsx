@@ -22,7 +22,9 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Switch } from '@/components/ui/switch';
 import { SettingsPanelHead } from './settings-panel-head';
+import { EvolutionGoConfig } from './evolution-go-config';
 import {
   Accordion,
   AccordionItem,
@@ -44,7 +46,13 @@ export function WhatsAppConfig() {
   // context and key every read off it — so a teammate who just
   // joined an account sees the inviter's saved config without
   // having to re-enter anything.
-  const { user, accountId, loading: authLoading, profileLoading } = useAuth();
+  const {
+    user,
+    accountId,
+    loading: authLoading,
+    profileLoading,
+    canEditSettings,
+  } = useAuth();
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -52,6 +60,9 @@ export function WhatsAppConfig() {
   const [resetting, setResetting] = useState(false);
   const [showToken, setShowToken] = useState(false);
   const [config, setConfig] = useState<WhatsAppConfigType | null>(null);
+  const [provider, setProvider] = useState<'meta' | 'evolution'>(
+    config?.provider === 'evolution' ? 'evolution' : 'meta',
+  );
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('unknown');
   const [resetReason, setResetReason] = useState<ResetReason>(null);
   const [statusMessage, setStatusMessage] = useState<string>('');
@@ -69,6 +80,16 @@ export function WhatsAppConfig() {
   const [verifyToken, setVerifyToken] = useState('');
   const [pin, setPin] = useState('');
   const [tokenEdited, setTokenEdited] = useState(false);
+
+  // Inbound-media mirror (issue #466). Unlike everything else on this
+  // page it is NOT part of handleSave: that path insists on re-entering
+  // the access token so it can re-verify with Meta, which is a silly
+  // toll to pay for flipping a boolean. The switch writes straight to
+  // the row instead — RLS (migration 017) restricts whatsapp_config
+  // UPDATE to admins, hence the canEditSettings gate below; without it
+  // a viewer's toggle would match zero rows and appear to work.
+  const [mirrorMedia, setMirrorMedia] = useState(true);
+  const [savingMirror, setSavingMirror] = useState(false);
 
   // True once /register has succeeded on Meta's side (timestamp set
   // in the row). When false, the saved config is metadata-only and
@@ -115,20 +136,26 @@ export function WhatsAppConfig() {
 
       if (data) {
         setConfig(data);
+        setProvider(data.provider === 'evolution' ? 'evolution' : 'meta');
         setPhoneNumberId(data.phone_number_id || '');
         setWabaId(data.waba_id || '');
         setAccessToken(MASKED_TOKEN);
         setVerifyToken('');
         setPin('');
         setTokenEdited(false);
+        // Undefined on a row read before migration 039 — treat that as
+        // on, matching the webhook's own default.
+        setMirrorMedia(data.mirror_inbound_media !== false);
       } else {
         setConfig(null);
+        setProvider('meta');
         setPhoneNumberId('');
         setWabaId('');
         setAccessToken('');
         setVerifyToken('');
         setPin('');
         setTokenEdited(false);
+        setMirrorMedia(true);
       }
       // Clear any stale probe result when reloading the row.
       setRegistrationProbe(null);
@@ -181,6 +208,29 @@ export function WhatsAppConfig() {
     loadedAccountIdRef.current = accountId;
     fetchConfig(accountId);
   }, [authLoading, profileLoading, user?.id, accountId, fetchConfig]);
+
+  async function handleToggleMirrorMedia(next: boolean) {
+    if (!config || !accountId || savingMirror) return;
+    // Optimistic — the switch should feel instant; a failure rolls it
+    // back rather than leaving the UI ahead of the row.
+    const previous = mirrorMedia;
+    setMirrorMedia(next);
+    setSavingMirror(true);
+    try {
+      const { error } = await supabase
+        .from('whatsapp_config')
+        .update({ mirror_inbound_media: next })
+        .eq('account_id', accountId);
+      if (error) throw new Error(error.message);
+      setConfig({ ...config, mirror_inbound_media: next });
+    } catch (error) {
+      console.error('Failed to update media retention setting:', error);
+      setMirrorMedia(previous);
+      toast.error(t('mirrorInboundSaveFailed'));
+    } finally {
+      setSavingMirror(false);
+    }
+  }
 
   async function handleSave() {
     if (!phoneNumberId.trim()) {
@@ -393,6 +443,23 @@ export function WhatsAppConfig() {
         title={t("title")}
         description={t("description")}
       />
+      <div className="flex gap-2 border-b pb-4 mb-6">
+        <Button
+          variant={provider === 'meta' ? 'default' : 'outline'}
+          onClick={() => setProvider('meta')}
+        >
+          Meta Cloud API
+        </Button>
+        <Button
+          variant={provider === 'evolution' ? 'default' : 'outline'}
+          onClick={() => setProvider('evolution')}
+        >
+          Evolution Go (QR Code)
+        </Button>
+      </div>
+      {provider === 'evolution' ? (
+        <EvolutionGoConfig />
+      ) : (
       <div className="grid gap-6 lg:grid-cols-[1fr_380px]">
       {/* Main config form */}
       <div className="space-y-6">
@@ -683,6 +750,43 @@ export function WhatsAppConfig() {
           </CardContent>
         </Card>
 
+        {/* Attachment retention. Only meaningful once a number is
+            connected, since it governs what the webhook does with
+            inbound media. */}
+        {config && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-foreground">{t('mediaTitle')}</CardTitle>
+              <CardDescription className="text-muted-foreground">
+                {t('mediaDesc')}
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="flex items-center justify-between gap-4 rounded-md border border-border p-3">
+                <div>
+                  <p className="text-sm font-medium text-foreground">
+                    {t('mirrorInbound')}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {t('mirrorInboundDesc')}
+                  </p>
+                  {!mirrorMedia && (
+                    <p className="mt-1 text-xs text-amber-600 dark:text-amber-500">
+                      {t('mirrorInboundOffWarning')}
+                    </p>
+                  )}
+                </div>
+                <Switch
+                  checked={mirrorMedia}
+                  onCheckedChange={handleToggleMirrorMedia}
+                  disabled={savingMirror || !canEditSettings}
+                  aria-label={t('mirrorInbound')}
+                />
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
         {/* Action Buttons */}
         <div className="flex flex-wrap gap-3">
           <Button
@@ -835,6 +939,7 @@ export function WhatsAppConfig() {
         </Card>
       </div>
     </div>
+      )}
     </section>
   );
 }
