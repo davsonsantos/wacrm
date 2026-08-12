@@ -114,6 +114,11 @@ vi.mock('@/lib/ai/auto-reply', () => ({ dispatchInboundToAiReply: vi.fn(async ()
 vi.mock('@/lib/webhooks/deliver', () => ({ dispatchWebhookEvent: vi.fn(async () => {}) }))
 vi.mock('@/lib/whatsapp/encryption', () => ({ decrypt: (v: string) => v.replace('enc-', '') }))
 
+const { getInstanceStatus } = vi.hoisted(() => ({
+  getInstanceStatus: vi.fn(async () => ({ connected: true, loggedIn: true, name: '+5511999999999' })),
+}))
+vi.mock('@/lib/whatsapp/evolution-api', () => ({ getInstanceStatus }))
+
 import { POST } from './route'
 
 function inboundRequest(body: unknown) {
@@ -135,6 +140,7 @@ describe('Evolution Go webhook route', () => {
     h.state.upsertCalls = []
     h.state.priorCustomerMsgCount = 0
     h.state.configUpdateCalls = []
+    getInstanceStatus.mockClear()
   })
 
   it('ignores an event whose instanceToken does not match the stored one', async () => {
@@ -264,7 +270,7 @@ describe('Evolution Go webhook route', () => {
     expect(h.state.upsertCalls).toHaveLength(0)
   })
 
-  it('marks the config connected on a Connected event', async () => {
+  it('marks the config connected on a Connected event and persists the instance name', async () => {
     const res = await POST(
       inboundRequest({
         event: 'Connected',
@@ -274,8 +280,70 @@ describe('Evolution Go webhook route', () => {
       }),
     )
     expect((res as { init?: { status?: number } }).init?.status ?? 200).toBe(200)
+    expect(getInstanceStatus).toHaveBeenCalledWith({ instanceToken: 'token' })
+    expect(h.state.configUpdateCalls).toHaveLength(1)
+    expect(h.state.configUpdateCalls[0].row).toMatchObject({
+      status: 'connected',
+      evolution_instance_name: '+5511999999999',
+    })
+    expect(h.state.configUpdateCalls[0]).toMatchObject({ col: 'id', val: 'config-1' })
+  })
+
+  it('still marks the config connected when getInstanceStatus fails (best-effort)', async () => {
+    getInstanceStatus.mockRejectedValueOnce(new Error('unreachable'))
+    const res = await POST(
+      inboundRequest({
+        event: 'PairSuccess',
+        instanceId: 'inst-1',
+        instanceToken: 'token',
+        data: {},
+      }),
+    )
+    expect((res as { init?: { status?: number } }).init?.status ?? 200).toBe(200)
     expect(h.state.configUpdateCalls).toHaveLength(1)
     expect(h.state.configUpdateCalls[0].row).toMatchObject({ status: 'connected' })
+    expect(h.state.configUpdateCalls[0].row).not.toHaveProperty('evolution_instance_name')
+  })
+
+  it('marks the config disconnected on a Disconnected event', async () => {
+    const res = await POST(
+      inboundRequest({
+        event: 'Disconnected',
+        instanceId: 'inst-1',
+        instanceToken: 'token',
+        data: {},
+      }),
+    )
+    expect((res as { init?: { status?: number } }).init?.status ?? 200).toBe(200)
+    expect(h.state.configUpdateCalls).toHaveLength(1)
+    expect(h.state.configUpdateCalls[0].row).toMatchObject({ status: 'disconnected' })
     expect(h.state.configUpdateCalls[0]).toMatchObject({ col: 'id', val: 'config-1' })
+  })
+
+  it('marks the config disconnected on a LoggedOut event', async () => {
+    const res = await POST(
+      inboundRequest({
+        event: 'LoggedOut',
+        instanceId: 'inst-1',
+        instanceToken: 'token',
+        data: {},
+      }),
+    )
+    expect((res as { init?: { status?: number } }).init?.status ?? 200).toBe(200)
+    expect(h.state.configUpdateCalls[0].row).toMatchObject({ status: 'disconnected' })
+  })
+
+  it('returns 200 status:error instead of throwing on a malformed Message payload', async () => {
+    const res = await POST(
+      inboundRequest({
+        event: 'Message',
+        instanceId: 'inst-1',
+        instanceToken: 'token',
+        data: {}, // no `Info` — payload.Info.IsFromMe would throw
+      }),
+    )
+    expect((res as { init?: { status?: number } }).init?.status ?? 200).toBe(200)
+    expect((res as { body?: { status?: string } }).body).toMatchObject({ status: 'error' })
+    expect(h.state.upsertCalls).toHaveLength(0)
   })
 })

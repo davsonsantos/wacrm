@@ -17,6 +17,9 @@ export default defineConfig({
       META_APP_SECRET: "test-meta-app-secret",
       EVOLUTION_API_BASE_URL: "https://evolution.test",
       EVOLUTION_GLOBAL_API_KEY: "test-global-key",
+      // Read by POST /api/whatsapp/evolution/connect's webhookUrl() to
+      // register the inbound webhook — throws a clear error if unset.
+      NEXT_PUBLIC_SITE_URL: "https://app.test",
     },
     clearMocks: true,
   },

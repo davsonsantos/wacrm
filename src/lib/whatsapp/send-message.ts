@@ -322,7 +322,7 @@ export async function sendMessageToConversation(
   // a row (see resolveTemplateRow).
   let templateRow: MessageTemplate | null = null;
   let sendLanguage = templateLanguage || 'en_US';
-  if (messageType === 'template' && templateName) {
+  if (config.provider !== 'evolution' && messageType === 'template' && templateName) {
     const resolved = await resolveTemplateRow(
       db,
       accountId,

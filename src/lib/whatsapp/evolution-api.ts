@@ -13,8 +13,18 @@
  * needs to change.
  */
 
-const EVOLUTION_API_BASE_URL = process.env.EVOLUTION_API_BASE_URL!
-const EVOLUTION_GLOBAL_API_KEY = process.env.EVOLUTION_GLOBAL_API_KEY!
+function requiredEnv(name: 'EVOLUTION_API_BASE_URL' | 'EVOLUTION_GLOBAL_API_KEY'): string {
+  const value = process.env[name]
+  if (!value) {
+    throw new Error(
+      `${name} is required to use Evolution Go (see .env.local.example). This is only needed if you use the "Conectar via QR Code" flow.`,
+    )
+  }
+  return value
+}
+
+const EVOLUTION_API_BASE_URL = requiredEnv('EVOLUTION_API_BASE_URL')
+const EVOLUTION_GLOBAL_API_KEY = requiredEnv('EVOLUTION_GLOBAL_API_KEY')
 
 export interface EvolutionSendResult {
   messageId: string

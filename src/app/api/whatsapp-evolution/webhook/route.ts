@@ -7,13 +7,25 @@
  * (the server is multi-tenant, so this is the tenant boundary).
  *
  * `Message` events run the full inbound pipeline. `Connected` /
- * `PairSuccess` mark the config row `connected` so the settings page
- * (polling `/api/whatsapp/config`, Task 5) can reflect it. Every
- * other event (e.g. `QRCode`) is ignored — the QR itself is fetched
- * on demand via `/api/whatsapp/evolution/qr`, not pushed here.
+ * `PairSuccess` mark the config row `connected` (and best-effort
+ * persist the instance name via `getInstanceStatus`) so the settings
+ * page (polling `/api/whatsapp/config`, Task 5) can reflect it.
+ * `Disconnected` / `LoggedOut` revert it back to `disconnected` —
+ * these event names are inferred from the naming convention of the
+ * other connection events and should be confirmed against the real
+ * server. Every other event (e.g. `QRCode`) is ignored — the QR
+ * itself is fetched on demand via `/api/whatsapp/evolution/qr`, not
+ * pushed here.
+ *
+ * The whole processing step (everything after the instanceToken
+ * check) runs inside a try/catch that returns 200 on any unexpected
+ * throw, matching the Meta webhook's resilience — most senders retry
+ * on non-2xx, so surfacing our own bugs as 500s would just cause
+ * duplicate deliveries and noisy alerting.
  */
 import { NextResponse } from 'next/server'
 import { decrypt } from '@/lib/whatsapp/encryption'
+import { getInstanceStatus } from '@/lib/whatsapp/evolution-api'
 import { dispatchWebhookEvent } from '@/lib/webhooks/deliver'
 import {
   supabaseAdmin,
@@ -123,54 +135,95 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Invalid instance token' }, { status: 401 })
   }
 
-  if (body.event === 'Connected' || body.event === 'PairSuccess') {
-    await supabaseAdmin()
-      .from('whatsapp_config')
-      .update({ status: 'connected', connected_at: new Date().toISOString() })
-      .eq('id', config.id)
-    return NextResponse.json({ status: 'ok' }, { status: 200 })
-  }
-  if (body.event !== 'Message') {
-    // Other connection/QR events: status is read on demand by the
-    // settings page (Task 5), not pushed through here in v1.
-    return NextResponse.json({ status: 'ignored' }, { status: 200 })
-  }
+  // Everything below this point processes trusted event data (the
+  // instanceToken check above already rejected spoofed payloads), but a
+  // malformed/unexpected event shape (e.g. `Message` with no `Info`) or a
+  // transient failure (e.g. Evolution Go being unreachable) can still
+  // throw. Match the Meta webhook route's resilience: log and return 200
+  // rather than surfacing a 500 that most senders would just retry.
+  try {
+    if (body.event === 'Connected' || body.event === 'PairSuccess') {
+      // Best-effort: also pull the instance's WhatsApp name/number so the
+      // settings card isn't stuck showing a blank number. Never block
+      // marking the connection as `connected` on this succeeding.
+      let instanceName: string | undefined
+      try {
+        const info = await getInstanceStatus({ instanceToken: storedToken })
+        instanceName = info.name
+      } catch (err) {
+        console.warn('[evolution-webhook] getInstanceStatus failed:', err)
+      }
 
-  const payload = body.data as EvolutionMessagePayload
-  if (payload.Info.IsFromMe || payload.Info.IsGroup) {
-    return NextResponse.json({ status: 'ignored' }, { status: 200 })
-  }
+      await supabaseAdmin()
+        .from('whatsapp_config')
+        .update({
+          status: 'connected',
+          connected_at: new Date().toISOString(),
+          ...(instanceName ? { evolution_instance_name: instanceName } : {}),
+        })
+        .eq('id', config.id)
+      return NextResponse.json({ status: 'ok' }, { status: 200 })
+    }
 
-  const senderPhone = phoneFromJid(payload.Info.Chat)
-  const contactName = payload.Info.PushName || senderPhone
+    // Event name inferred from the `Connected`/`PairSuccess` naming
+    // convention used elsewhere in this webhook — not confirmed against
+    // the real Evolution Go server. Confirm and adjust if the actual
+    // disconnect/logout event name differs. Without this, `status` never
+    // reverts once a device unlinks or the session dies remotely, so the
+    // Inbox/Settings keep reporting "connected" and sends silently fail.
+    if (body.event === 'Disconnected' || body.event === 'LoggedOut') {
+      await supabaseAdmin()
+        .from('whatsapp_config')
+        .update({ status: 'disconnected' })
+        .eq('id', config.id)
+      return NextResponse.json({ status: 'ok' }, { status: 200 })
+    }
 
-  const contactOutcome = await findOrCreateContact(config.account_id, config.user_id, senderPhone, contactName)
-  if (!contactOutcome) return NextResponse.json({ status: 'error' }, { status: 200 })
+    if (body.event !== 'Message') {
+      // Other connection/QR events: status is read on demand by the
+      // settings page (Task 5), not pushed through here in v1.
+      return NextResponse.json({ status: 'ignored' }, { status: 200 })
+    }
 
-  const convResult = await findOrCreateConversation(config.account_id, config.user_id, contactOutcome.contact.id)
-  if (!convResult) return NextResponse.json({ status: 'error' }, { status: 200 })
+    const payload = body.data as EvolutionMessagePayload
+    if (payload.Info.IsFromMe || payload.Info.IsGroup) {
+      return NextResponse.json({ status: 'ignored' }, { status: 200 })
+    }
 
-  if (convResult.created) {
-    await dispatchWebhookEvent(supabaseAdmin(), config.account_id, 'conversation.created', {
-      conversation_id: convResult.conversation.id,
-      contact_id: contactOutcome.contact.id,
+    const senderPhone = phoneFromJid(payload.Info.Chat)
+    const contactName = payload.Info.PushName || senderPhone
+
+    const contactOutcome = await findOrCreateContact(config.account_id, config.user_id, senderPhone, contactName)
+    if (!contactOutcome) return NextResponse.json({ status: 'error' }, { status: 200 })
+
+    const convResult = await findOrCreateConversation(config.account_id, config.user_id, contactOutcome.contact.id)
+    if (!convResult) return NextResponse.json({ status: 'error' }, { status: 200 })
+
+    if (convResult.created) {
+      await dispatchWebhookEvent(supabaseAdmin(), config.account_id, 'conversation.created', {
+        conversation_id: convResult.conversation.id,
+        contact_id: contactOutcome.contact.id,
+      })
+    }
+
+    const { contentType, contentText, mediaUrl } = normalizeContent(payload.Message, payload.Info.ID)
+
+    await ingestInboundMessage({
+      accountId: config.account_id,
+      configOwnerUserId: config.user_id,
+      contactId: contactOutcome.contact.id,
+      conversation: convResult.conversation,
+      wasContactCreated: contactOutcome.wasCreated,
+      providerMessageId: payload.Info.ID,
+      contentType,
+      content: { contentText, mediaUrl, interactiveReplyId: null },
+      createdAt: new Date(payload.Info.Timestamp),
+      replyToProviderMessageId: null,
     })
+
+    return NextResponse.json({ status: 'received' }, { status: 200 })
+  } catch (err) {
+    console.error('[evolution-webhook] unhandled error processing event:', err)
+    return NextResponse.json({ status: 'error' }, { status: 200 })
   }
-
-  const { contentType, contentText, mediaUrl } = normalizeContent(payload.Message, payload.Info.ID)
-
-  await ingestInboundMessage({
-    accountId: config.account_id,
-    configOwnerUserId: config.user_id,
-    contactId: contactOutcome.contact.id,
-    conversation: convResult.conversation,
-    wasContactCreated: contactOutcome.wasCreated,
-    providerMessageId: payload.Info.ID,
-    contentType,
-    content: { contentText, mediaUrl, interactiveReplyId: null },
-    createdAt: new Date(payload.Info.Timestamp),
-    replyToProviderMessageId: null,
-  })
-
-  return NextResponse.json({ status: 'received' }, { status: 200 })
 }

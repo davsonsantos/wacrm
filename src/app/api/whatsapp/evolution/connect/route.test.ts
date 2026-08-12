@@ -1,11 +1,11 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 
 const h = vi.hoisted(() => ({
   createInstance: vi.fn(async () => ({ instanceId: 'inst-1', instanceToken: 'raw-token' })),
   connectInstance: vi.fn(async () => {}),
   logoutInstance: vi.fn(async () => {}),
   upsertCalls: [] as Record<string, unknown>[],
-  deleteCalls: [] as string[],
+  deleteCalls: [] as { col: string; val: string }[],
   accountId: 'acc-1' as string | null,
   authUser: { id: 'user-1' } as { id: string } | null,
 }))
@@ -48,9 +48,14 @@ function supabaseMock() {
           }),
         }),
         delete: () => ({
-          eq: (_col: string, val: string) => {
-            h.deleteCalls.push(val)
-            return Promise.resolve({ error: null })
+          eq: (col: string, val: string) => {
+            h.deleteCalls.push({ col, val })
+            return {
+              eq: (col2: string, val2: string) => {
+                h.deleteCalls.push({ col: col2, val: val2 })
+                return Promise.resolve({ error: null })
+              },
+            }
           },
         }),
       }
@@ -81,6 +86,7 @@ describe('POST /api/whatsapp/evolution/connect', () => {
     })
     expect(h.upsertCalls[0]).toMatchObject({
       account_id: 'acc-1',
+      user_id: 'user-1',
       provider: 'evolution',
       evolution_instance_id: 'inst-1',
       evolution_instance_token: 'enc-raw-token',
@@ -101,6 +107,26 @@ describe('POST /api/whatsapp/evolution/connect', () => {
   })
 })
 
+describe('webhookUrl', () => {
+  const originalSiteUrl = process.env.NEXT_PUBLIC_SITE_URL
+
+  beforeEach(() => {
+    h.upsertCalls = []
+    h.accountId = 'acc-1'
+    h.authUser = { id: 'user-1' }
+  })
+
+  afterEach(() => {
+    process.env.NEXT_PUBLIC_SITE_URL = originalSiteUrl
+  })
+
+  it('throws instead of registering a webhook built from "undefined" when NEXT_PUBLIC_SITE_URL is unset', async () => {
+    delete process.env.NEXT_PUBLIC_SITE_URL
+    await expect(POST()).rejects.toThrow(/NEXT_PUBLIC_SITE_URL/)
+    expect(h.connectInstance).not.toHaveBeenCalled()
+  })
+})
+
 describe('DELETE /api/whatsapp/evolution/connect', () => {
   beforeEach(() => {
     h.deleteCalls = []
@@ -108,17 +134,26 @@ describe('DELETE /api/whatsapp/evolution/connect', () => {
     h.authUser = { id: 'user-1' }
   })
 
-  it('logs out the instance and deletes the config row', async () => {
+  it('logs out the instance and deletes the config row, scoped to account_id AND provider', async () => {
     const res = await DELETE()
     expect((res as { init?: { status?: number } }).init?.status ?? 200).toBe(200)
     expect(h.logoutInstance).toHaveBeenCalledWith({ instanceToken: 'raw-token' })
-    expect(h.deleteCalls).toEqual(['acc-1'])
+    // Two chained .eq() calls — account_id first, then provider. This is
+    // the defense-in-depth guard (C3) that makes it structurally
+    // impossible for this endpoint to delete a Meta-provider row.
+    expect(h.deleteCalls).toEqual([
+      { col: 'account_id', val: 'acc-1' },
+      { col: 'provider', val: 'evolution' },
+    ])
   })
 
   it('still deletes the local config row when the remote logout fails', async () => {
     h.logoutInstance.mockRejectedValueOnce(new Error('instance already gone'))
     const res = await DELETE()
     expect((res as { init?: { status?: number } }).init?.status ?? 200).toBe(200)
-    expect(h.deleteCalls).toEqual(['acc-1'])
+    expect(h.deleteCalls).toEqual([
+      { col: 'account_id', val: 'acc-1' },
+      { col: 'provider', val: 'evolution' },
+    ])
   })
 })

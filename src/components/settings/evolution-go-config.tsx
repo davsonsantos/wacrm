@@ -24,7 +24,13 @@ export function EvolutionGoConfig() {
     const res = await fetch('/api/whatsapp/config')
     if (!res.ok) return
     const data = await res.json()
-    if (data.connected) {
+    // GET /api/whatsapp/config's Meta-branch response shape also has
+    // `connected: true` but omits `provider` entirely — without this
+    // check, opening this tab on a healthy Meta account would render
+    // "Conectado via Evolution Go" and expose a Disconnect button that
+    // (absent the provider-scoped DELETE guard) could destroy the
+    // Meta credentials. Require both.
+    if (data.connected && data.provider === 'evolution') {
       setStatus('connected')
       setInstanceName(data.instance_name ?? null)
       stopPolling()

@@ -5,7 +5,13 @@ import { encrypt, decrypt } from '@/lib/whatsapp/encryption'
 import { resolveAccountId } from '@/app/api/whatsapp/config/resolve-account'
 
 function webhookUrl(): string {
-  return `${process.env.NEXT_PUBLIC_APP_URL}/api/whatsapp-evolution/webhook`
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL
+  if (!siteUrl) {
+    throw new Error(
+      'NEXT_PUBLIC_SITE_URL is required to register the Evolution Go webhook',
+    )
+  }
+  return `${siteUrl.replace(/\/+$/, '')}/api/whatsapp-evolution/webhook`
 }
 
 /**
@@ -47,6 +53,7 @@ export async function POST() {
     .upsert(
       {
         account_id: accountId,
+        user_id: user.id,
         provider: 'evolution',
         evolution_instance_id: instanceId,
         evolution_instance_token: encrypt(instanceToken),
@@ -104,7 +111,15 @@ export async function DELETE() {
     }
   }
 
-  const { error } = await supabase.from('whatsapp_config').delete().eq('account_id', accountId)
+  // Scope by provider as well as account_id — defense in depth so this
+  // endpoint can never delete a healthy Meta row (which holds
+  // access_token/phone_number_id/waba_id) even if some UI bug lets it
+  // be called for a non-Evolution account.
+  const { error } = await supabase
+    .from('whatsapp_config')
+    .delete()
+    .eq('account_id', accountId)
+    .eq('provider', 'evolution')
   if (error) {
     return NextResponse.json({ error: 'Failed to disconnect' }, { status: 500 })
   }
