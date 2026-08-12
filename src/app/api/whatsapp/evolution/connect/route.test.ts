@@ -114,4 +114,11 @@ describe('DELETE /api/whatsapp/evolution/connect', () => {
     expect(h.logoutInstance).toHaveBeenCalledWith({ instanceToken: 'raw-token' })
     expect(h.deleteCalls).toEqual(['acc-1'])
   })
+
+  it('still deletes the local config row when the remote logout fails', async () => {
+    h.logoutInstance.mockRejectedValueOnce(new Error('instance already gone'))
+    const res = await DELETE()
+    expect((res as { init?: { status?: number } }).init?.status ?? 200).toBe(200)
+    expect(h.deleteCalls).toEqual(['acc-1'])
+  })
 })

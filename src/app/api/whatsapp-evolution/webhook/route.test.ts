@@ -13,6 +13,7 @@ const h = vi.hoisted(() => ({
     messageUpsertResult: [{ id: 'msg-1' }] as { id: string }[],
     priorCustomerMsgCount: 0,
     upsertCalls: [] as Record<string, unknown>[],
+    configUpdateCalls: [] as Record<string, unknown>[],
   },
 }))
 
@@ -37,7 +38,12 @@ vi.mock('@supabase/supabase-js', () => ({
                   }),
               }),
             }),
-            update: () => ({ eq: () => Promise.resolve({ error: null }) }),
+            update: (row: Record<string, unknown>) => ({
+              eq: (col: string, val: string) => {
+                h.state.configUpdateCalls.push({ row, col, val })
+                return Promise.resolve({ error: null })
+              },
+            }),
           }
         case 'contacts':
           return {
@@ -128,6 +134,7 @@ describe('Evolution Go webhook route', () => {
     }
     h.state.upsertCalls = []
     h.state.priorCustomerMsgCount = 0
+    h.state.configUpdateCalls = []
   })
 
   it('ignores an event whose instanceToken does not match the stored one', async () => {
@@ -267,5 +274,8 @@ describe('Evolution Go webhook route', () => {
       }),
     )
     expect((res as { init?: { status?: number } }).init?.status ?? 200).toBe(200)
+    expect(h.state.configUpdateCalls).toHaveLength(1)
+    expect(h.state.configUpdateCalls[0].row).toMatchObject({ status: 'connected' })
+    expect(h.state.configUpdateCalls[0]).toMatchObject({ col: 'id', val: 'config-1' })
   })
 })
