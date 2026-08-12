@@ -2,6 +2,7 @@ import { NextResponse, after } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { decrypt, encrypt, isLegacyFormat } from '@/lib/whatsapp/encryption'
 import { getMediaUrl, downloadMedia } from '@/lib/whatsapp/meta-api'
+import { mirrorInboundMedia } from '@/lib/whatsapp/mirror-inbound-media'
 import { normalizePhone } from '@/lib/whatsapp/phone-utils'
 import { verifyMetaWebhookSignature } from '@/lib/whatsapp/webhook-signature'
 import { dispatchWebhookEvent } from '@/lib/webhooks/deliver'
@@ -311,7 +312,11 @@ async function processWebhook(body: { entry?: WhatsAppWebhookEntry[] }) {
           // inserts that need it for NOT NULL FK compliance. Always
           // the admin who saved the WhatsApp config.
           config.user_id,
-          decryptedAccessToken
+          decryptedAccessToken,
+          // Default ON: the column is NOT NULL DEFAULT TRUE, but a row
+          // read before migration 039 lands would have it undefined,
+          // and losing attachments is the failure mode worth avoiding.
+          config.mirror_inbound_media !== false
         )
       }
     }
@@ -518,7 +523,10 @@ async function processMessage(
   // (contacts, conversations). Always the admin who saved the
   // WhatsApp config; the choice is arbitrary post-017 but stable.
   configOwnerUserId: string,
-  accessToken: string
+  accessToken: string,
+  // Per-account opt-out for the inbound-media mirror (migration 039).
+  // See parseMessageContent for what it turns off.
+  mirrorMedia: boolean
 ) {
   const senderPhone = normalizePhone(message.from)
   const contactName = contact.profile.name
@@ -561,11 +569,24 @@ async function processMessage(
     return
   }
 
-  // Parse message content based on type
+  // Parse message content based on type. `mirrorMedia` copies inbound
+  // attachments into the durable `chat-media` bucket (migration 039 on
+  // main, issue #466) — see parseMessageContent for what it does when
+  // enabled/disabled. `mediaType` is Meta's MIME type for the
+  // attachment, persisted so a download doesn't have to guess an
+  // extension from the fetched blob.
   const { contentText, mediaUrl, mediaType, interactiveReplyId } =
-    await parseMessageContent(message, accessToken)
-  void mediaType // no `media_type` column — MIME is only used inside parseMessageContent
+    await parseMessageContent(
+      message,
+      accessToken,
+      mirrorMedia ? { accountId } : null
+    )
 
+  // The messages.content_type CHECK constraint (widened in migration 010
+  // to add 'interactive' for button/list taps) allows:
+  //   text, image, document, audio, video, location, template, interactive
+  // Map incoming WhatsApp types that aren't in that list to the closest
+  // allowed value so the INSERT doesn't fail with a constraint error.
   const ALLOWED_CONTENT_TYPES = new Set([
     'text', 'image', 'document', 'audio', 'video',
     'location', 'template', 'interactive',
@@ -578,6 +599,10 @@ async function processMessage(
         ? 'interactive'
         : 'text'
 
+  // Insert/bump/reopen/broadcast-flag/flows/automations/AI/webhook
+  // dispatch all live in the provider-agnostic tail — see
+  // inbound-message.ts. `replyToProviderMessageId` resolution and the
+  // first-inbound-message / idempotent-replay handling happen inside it.
   await ingestInboundMessage({
     accountId,
     configOwnerUserId,
@@ -588,7 +613,7 @@ async function processMessage(
     contentType: contentType as
       | 'text' | 'image' | 'document' | 'audio' | 'video'
       | 'location' | 'template' | 'interactive',
-    content: { contentText, mediaUrl, interactiveReplyId },
+    content: { contentText, mediaUrl, mediaType, interactiveReplyId },
     createdAt: new Date(parseInt(message.timestamp) * 1000),
     replyToProviderMessageId: message.context?.id ?? null,
   })
@@ -596,7 +621,10 @@ async function processMessage(
 
 async function parseMessageContent(
   message: WhatsAppMessage,
-  accessToken: string
+  accessToken: string,
+  // Tenancy + opt-out for the media mirror. Null disables mirroring
+  // entirely, which is what the account-level toggle does.
+  mirror: { accountId: string } | null
 ): Promise<{
   contentText: string | null
   mediaUrl: string | null
@@ -614,11 +642,41 @@ async function parseMessageContent(
   // the args swapped, so every verification hit an invalid Meta URL and
   // fell through to the catch block, leaving mediaUrl as null. That's
   // why images showed up as empty bubbles in the inbox.
+  //
+  // Beyond verifying, this is where inbound media gets COPIED into the
+  // `chat-media` bucket (issue #466). Meta deletes media ~30 days after
+  // receipt, so the `/api/whatsapp/media/<id>` proxy URL we used to
+  // store is a pointer with an expiry date on it — every inbound
+  // attachment silently became "Photo unavailable" a month later.
+  // Mirroring stores a durable public URL instead.
+  //
+  // The mirror is strictly best-effort. `mirrorInboundMedia` swallows
+  // its own failures and returns null, and we fall back to the proxy
+  // URL — a webhook that throws would have Meta retry the delivery and
+  // re-run everything downstream, which is a far worse outcome than an
+  // attachment that expires.
   const verifyAndBuildUrl = async (
-    mediaId: string
+    mediaId: string,
+    fileName?: string | null
   ): Promise<string | null> => {
     try {
-      await getMediaUrl({ mediaId, accessToken })
+      const info = await getMediaUrl({ mediaId, accessToken })
+
+      if (mirror) {
+        const mirrored = await mirrorInboundMedia({
+          storage: supabaseAdmin().storage,
+          accountId: mirror.accountId,
+          mediaId,
+          downloadUrl: info.url,
+          accessToken,
+          mimeType: info.mimeType,
+          fileSize: info.fileSize,
+          fileName,
+          messageTimestamp: message.timestamp,
+        })
+        if (mirrored) return mirrored
+      }
+
       return `/api/whatsapp/media/${mediaId}`
     } catch (error) {
       console.error(
@@ -670,7 +728,13 @@ async function parseMessageContent(
           ...empty,
           contentText:
             message.document.caption || message.document.filename || null,
-          mediaUrl: await verifyAndBuildUrl(message.document.id),
+          // The sender's own filename becomes the mirrored object's
+          // name, so saving the attachment yields `invoice.pdf` even
+          // when a caption displaced the filename in content_text.
+          mediaUrl: await verifyAndBuildUrl(
+            message.document.id,
+            message.document.filename
+          ),
           mediaType: message.document.mime_type,
         }
       }

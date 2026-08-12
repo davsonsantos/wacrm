@@ -19,6 +19,16 @@ const h = vi.hoisted(() => ({
     afterCallbacks: [] as (() => Promise<void> | void)[],
     automationStarted: 0,
     automationCompleted: 0,
+    /** whatsapp_config.mirror_inbound_media for the matched row (#466). */
+    mirrorInboundMedia: true as boolean | undefined,
+    /** Objects the inbound-media mirror pushed into chat-media. */
+    storageUploads: [] as {
+      bucket: string
+      path: string
+      options: { contentType?: string }
+    }[],
+    /** Error the next storage upload resolves with, if any. */
+    storageUploadError: null as { message: string } | null,
   },
 }))
 
@@ -45,6 +55,7 @@ vi.mock('@supabase/supabase-js', () => ({
                       account_id: 'acc-1',
                       user_id: 'user-1',
                       access_token: 'enc',
+                      mirror_inbound_media: h.state.mirrorInboundMedia,
                     },
                   ],
                   error: null,
@@ -133,6 +144,24 @@ vi.mock('@supabase/supabase-js', () => ({
       h.state.rpcCalls.push({ name, args })
       return Promise.resolve({ data: null, error: null })
     },
+    // Service-role Storage, used by the inbound-media mirror (#466).
+    storage: {
+      from(bucket: string) {
+        return {
+          upload: (
+            path: string,
+            _body: unknown,
+            options: { contentType?: string },
+          ) => {
+            h.state.storageUploads.push({ bucket, path, options })
+            return Promise.resolve({ error: h.state.storageUploadError })
+          },
+          getPublicUrl: (path: string) => ({
+            data: { publicUrl: `https://cdn.test/${bucket}/${path}` },
+          }),
+        }
+      },
+    },
   }),
 }))
 
@@ -174,6 +203,10 @@ vi.mock('@/lib/webhooks/deliver', () => ({
 }))
 
 import { POST } from './route'
+import { getMediaUrl, downloadMedia } from '@/lib/whatsapp/meta-api'
+
+const mockGetMediaUrl = vi.mocked(getMediaUrl)
+const mockDownloadMedia = vi.mocked(downloadMedia)
 
 const TEXT_MESSAGE = {
   id: 'wamid.TEST1',
@@ -224,6 +257,18 @@ beforeEach(() => {
   h.state.afterCallbacks = []
   h.state.automationStarted = 0
   h.state.automationCompleted = 0
+  h.state.mirrorInboundMedia = true
+  h.state.storageUploads = []
+  h.state.storageUploadError = null
+  mockGetMediaUrl.mockResolvedValue({
+    url: 'https://lookaside.fbsbx.com/whatsapp/abc',
+    mimeType: 'image/jpeg',
+    fileSize: 2048,
+  })
+  mockDownloadMedia.mockResolvedValue({
+    buffer: Buffer.alloc(2048),
+    contentType: 'image/jpeg',
+  })
   h.dispatchInboundToFlows.mockResolvedValue({ consumed: false })
   h.dispatchInboundToAiReply.mockResolvedValue(undefined)
   h.dispatchWebhookEvent.mockResolvedValue(undefined)
@@ -342,6 +387,143 @@ describe('inbound webhook: template quick-reply buttons (#478)', () => {
       content_text: 'Track my order',
       interactive_reply_id: 'Track my order',
     })
+  })
+})
+
+describe('inbound webhook: inbound media is mirrored (#466)', () => {
+  const IMAGE_MESSAGE = {
+    id: 'wamid.IMG1',
+    from: '15551230000',
+    timestamp: '1700000000',
+    type: 'image',
+    image: { id: '1234567890123456', mime_type: 'image/jpeg', caption: 'hi' },
+  }
+
+  it('stores a durable bucket URL instead of the expiring proxy path', async () => {
+    await runWebhook(IMAGE_MESSAGE)
+
+    expect(h.state.storageUploads).toHaveLength(1)
+    expect(h.state.storageUploads[0].bucket).toBe('chat-media')
+    expect(h.state.storageUploads[0].path).toBe(
+      'account-acc-1/inbound/1234567890123456-image-1700000000.jpg',
+    )
+    expect(h.state.upsertCalls[0].row).toMatchObject({
+      media_url:
+        'https://cdn.test/chat-media/account-acc-1/inbound/1234567890123456-image-1700000000.jpg',
+      // Meta's MIME type used to be discarded outright (`void mediaType`).
+      media_type: 'image/jpeg',
+    })
+  })
+
+  it('falls back to the proxy URL when the upload is refused', async () => {
+    h.state.storageUploadError = { message: 'mime type not supported' }
+
+    await runWebhook(IMAGE_MESSAGE)
+
+    // The message still lands, and it still lands with a usable URL —
+    // the mirror failing must never cost us the message.
+    expect(h.state.upsertCalls).toHaveLength(1)
+    expect(h.state.upsertCalls[0].row).toMatchObject({
+      media_url: '/api/whatsapp/media/1234567890123456',
+      media_type: 'image/jpeg',
+    })
+  })
+
+  it('falls back to the proxy URL when the download from Meta throws', async () => {
+    mockDownloadMedia.mockRejectedValueOnce(new Error('Media download failed: 404'))
+
+    await runWebhook(IMAGE_MESSAGE)
+
+    expect(h.state.upsertCalls[0].row).toMatchObject({
+      media_url: '/api/whatsapp/media/1234567890123456',
+    })
+  })
+
+  it('skips media larger than the bucket accepts, without downloading it', async () => {
+    mockGetMediaUrl.mockResolvedValue({
+      url: 'https://lookaside.fbsbx.com/whatsapp/big',
+      mimeType: 'application/pdf',
+      fileSize: 40 * 1024 * 1024,
+    })
+
+    await runWebhook({
+      id: 'wamid.DOC1',
+      from: '15551230000',
+      timestamp: '1700000000',
+      type: 'document',
+      document: {
+        id: '999',
+        mime_type: 'application/pdf',
+        filename: 'huge.pdf',
+      },
+    })
+
+    expect(mockDownloadMedia).not.toHaveBeenCalled()
+    expect(h.state.storageUploads).toHaveLength(0)
+    expect(h.state.upsertCalls[0].row).toMatchObject({
+      media_url: '/api/whatsapp/media/999',
+      media_type: 'application/pdf',
+    })
+  })
+
+  it("names the object after a document's own filename", async () => {
+    mockGetMediaUrl.mockResolvedValue({
+      url: 'https://lookaside.fbsbx.com/whatsapp/doc',
+      mimeType: 'application/pdf',
+      fileSize: 4096,
+    })
+    mockDownloadMedia.mockResolvedValue({
+      buffer: Buffer.alloc(4096),
+      contentType: 'application/pdf',
+    })
+
+    await runWebhook({
+      id: 'wamid.DOC2',
+      from: '15551230000',
+      timestamp: '1700000000',
+      type: 'document',
+      document: {
+        id: '1234567890123456',
+        mime_type: 'application/pdf',
+        filename: 'invoice.pdf',
+        caption: 'have a look',
+      },
+    })
+
+    expect(h.state.storageUploads[0].path).toBe(
+      'account-acc-1/inbound/1234567890123456-invoice.pdf',
+    )
+  })
+
+  it('does not mirror when the account has opted out', async () => {
+    h.state.mirrorInboundMedia = false
+
+    await runWebhook(IMAGE_MESSAGE)
+
+    expect(mockDownloadMedia).not.toHaveBeenCalled()
+    expect(h.state.storageUploads).toHaveLength(0)
+    expect(h.state.upsertCalls[0].row).toMatchObject({
+      media_url: '/api/whatsapp/media/1234567890123456',
+      // Still recorded — the MIME type costs nothing and makes the
+      // download name right even for proxied media.
+      media_type: 'image/jpeg',
+    })
+  })
+
+  it('mirrors when the column is absent, e.g. a row read before migration 039', async () => {
+    h.state.mirrorInboundMedia = undefined
+
+    await runWebhook(IMAGE_MESSAGE)
+
+    expect(h.state.storageUploads).toHaveLength(1)
+  })
+
+  it('leaves text messages alone', async () => {
+    await runWebhook()
+
+    expect(mockGetMediaUrl).not.toHaveBeenCalled()
+    expect(h.state.storageUploads).toHaveLength(0)
+    expect(h.state.upsertCalls[0].row).toMatchObject({ media_type: null })
   })
 })
 

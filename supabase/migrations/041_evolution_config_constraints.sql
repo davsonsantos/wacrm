@@ -1,7 +1,10 @@
 -- ============================================================
--- 040_evolution_config_constraints
+-- 041_evolution_config_constraints
 --
--- Migration 039 added the `provider`/`evolution_*` columns to
+-- (Originally authored as 040_evolution_config_constraints; renumbered
+-- to 041 when 039_evolution_provider became 040 — see that file.)
+--
+-- Migration 040 added the `provider`/`evolution_*` columns to
 -- whatsapp_config but never relaxed the constraints that migration
 -- 001 put on the Meta-only columns. As written, those constraints
 -- make the Evolution Go connect flow 100% non-functional against the
@@ -9,7 +12,7 @@
 --
 --   * `phone_number_id TEXT NOT NULL` and `access_token TEXT NOT
 --     NULL` — both are legitimately NULL for `provider = 'evolution'`
---     rows (Meta's columns are simply unused, per 039's own comment).
+--     rows (Meta's columns are simply unused, per 040's own comment).
 --     A fresh account's first upsert is an INSERT and trips both.
 --
 --   * `status TEXT NOT NULL DEFAULT 'disconnected' CHECK (status IN

@@ -178,6 +178,13 @@ export async function lookupInternalIdByMetaId(
 export interface NormalizedInboundContent {
   contentText: string | null
   mediaUrl: string | null
+  /**
+   * MIME type of `mediaUrl`'s content (messages.media_type, migration
+   * 039 on main / issue #466). Optional — providers without a MIME
+   * type available (e.g. Evolution Go's webhook, Task 4) omit it and
+   * the column is simply left null for that row.
+   */
+  mediaType?: string | null
   interactiveReplyId: string | null
 }
 
@@ -242,6 +249,7 @@ export async function ingestInboundMessage(params: IngestInboundMessageParams): 
         content_type: contentType,
         content_text: content.contentText,
         media_url: content.mediaUrl,
+        media_type: content.mediaType ?? null,
         message_id: providerMessageId,
         status: 'delivered',
         created_at: createdAt.toISOString(),

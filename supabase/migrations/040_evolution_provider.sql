@@ -1,5 +1,9 @@
 -- ============================================================
--- 039_evolution_provider
+-- 040_evolution_provider
+--
+-- (Originally authored as 039_evolution_provider; renumbered to 040
+-- to avoid colliding with 039_inbound_media_mirror, added on main
+-- concurrently.)
 --
 -- Adds Evolution Go (unofficial, QR-code-connected WhatsApp) as a
 -- second provider alongside the Meta Cloud API. `whatsapp_config`
