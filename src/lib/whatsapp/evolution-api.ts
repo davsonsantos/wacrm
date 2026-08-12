@@ -6,12 +6,17 @@
  * Auth: POST /instance/create is the one call that uses the shared
  * server's GLOBAL_API_KEY (no instance exists yet to have its own
  * token). Every other call is instance-scoped and authenticates with
- * that instance's own `token` (returned by create, stored encrypted
- * in whatsapp_config.evolution_instance_token) sent as the `apikey`
+ * that instance's own `token` (client-generated at create time — the
+ * server requires the caller to supply it in the create request body,
+ * confirmed against the real server: an omitted/empty `token` 400s
+ * with "token is required" — stored encrypted in
+ * whatsapp_config.evolution_instance_token) sent as the `apikey`
  * header — see the auth-model note in the Evolution Go plan doc if
  * this assumption turns out wrong; only `instanceAuthHeaders` below
  * needs to change.
  */
+
+import crypto from 'crypto'
 
 /**
  * Read lazily (call-time, not module-load-time): this module is
@@ -77,16 +82,21 @@ export interface CreateInstanceResult {
 }
 
 export async function createInstance(args: CreateInstanceArgs): Promise<CreateInstanceResult> {
+  // The server requires the caller to supply the instance token up
+  // front — it doesn't generate one. 32 random bytes, hex-encoded,
+  // matches this codebase's existing secret-generation style (see
+  // encryption.ts).
+  const token = crypto.randomBytes(32).toString('hex')
   const response = await fetch(`${evolutionApiBaseUrl()}/instance/create`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...globalAuthHeaders() },
-    body: JSON.stringify({ name: args.name }),
+    body: JSON.stringify({ name: args.name, token }),
   })
   if (!response.ok) {
     await throwEvolutionError(response, `Evolution Go API error: ${response.status}`)
   }
   const { data } = await response.json()
-  return { instanceId: data.id, instanceToken: data.token }
+  return { instanceId: data.id, instanceToken: data.token ?? token }
 }
 
 export interface ConnectInstanceArgs {

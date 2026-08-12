@@ -48,17 +48,29 @@ describe("evolution-api", () => {
     vi.unstubAllGlobals();
   });
 
-  it("createInstance posts to /instance/create with the GLOBAL key", async () => {
+  it("createInstance posts to /instance/create with the GLOBAL key and a client-generated token", async () => {
+    // The real server 400s with "token is required" if the create
+    // request omits it — the client must generate and send one.
     vi.stubGlobal(
       "fetch",
       okFetch({ data: { id: "inst-1", token: "inst-token-1" }, message: "success" }),
     );
     const result = await createInstance({ name: "acc-42" });
+    // The response's `data.token` is preferred when present, matching
+    // the request-echo shape the real server returns.
     expect(result).toEqual({ instanceId: "inst-1", instanceToken: "inst-token-1" });
     expect(captured?.url).toBe("https://evolution.test/instance/create");
     expect(captured?.method).toBe("POST");
     expect(captured?.headers?.apikey).toBe("test-global-key");
-    expect(captured?.body).toEqual({ name: "acc-42" });
+    expect(captured?.body).toMatchObject({ name: "acc-42" });
+    expect((captured?.body as { token: string }).token).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  it("createInstance falls back to the token it generated if the response omits one", async () => {
+    vi.stubGlobal("fetch", okFetch({ data: { id: "inst-1" }, message: "success" }));
+    const result = await createInstance({ name: "acc-42" });
+    const sentToken = (captured?.body as { token: string }).token;
+    expect(result).toEqual({ instanceId: "inst-1", instanceToken: sentToken });
   });
 
   it("connectInstance posts webhookUrl+subscribe with the INSTANCE token", async () => {
