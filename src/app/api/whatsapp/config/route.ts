@@ -7,29 +7,7 @@ import {
   verifyPhoneNumber,
 } from '@/lib/whatsapp/meta-api'
 import { encrypt, decrypt } from '@/lib/whatsapp/encryption'
-
-/**
- * Resolve the caller's account_id from their profile. Inlined here
- * (rather than going through `@/lib/auth/account.getCurrentAccount`)
- * because the GET handler wants to return shaped 200s for every
- * non-auth failure mode, not throw — keeping the helper minimal lets
- * the existing response branches stay as-is.
- *
- * Returns null if the user has no profile or no account; callers
- * should treat that the same as "not connected".
- */
-async function resolveAccountId(
-  supabase: Awaited<ReturnType<typeof createClient>>,
-  userId: string,
-): Promise<string | null> {
-  const { data, error } = await supabase
-    .from('profiles')
-    .select('account_id')
-    .eq('user_id', userId)
-    .maybeSingle()
-  if (error || !data?.account_id) return null
-  return data.account_id as string
-}
+import { resolveAccountId } from './resolve-account'
 
 // Lazy-initialised service-role client. We need it to detect a
 // phone_number_id already claimed by a *different* user — under RLS,
@@ -87,7 +65,7 @@ export async function GET() {
 
     const { data: config, error: configError } = await supabase
       .from('whatsapp_config')
-      .select('phone_number_id, access_token, status')
+      .select('phone_number_id, access_token, status, provider, evolution_instance_name')
       .eq('account_id', accountId)
       .maybeSingle()
 
@@ -108,6 +86,14 @@ export async function GET() {
         },
         { status: 200 }
       )
+    }
+
+    if (config.provider === 'evolution') {
+      return NextResponse.json({
+        connected: config.status === 'connected',
+        provider: 'evolution' as const,
+        instance_name: config.evolution_instance_name ?? null,
+      })
     }
 
     // Try to decrypt the stored token with the current ENCRYPTION_KEY.

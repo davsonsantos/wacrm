@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 const h = vi.hoisted(() => ({
   state: {
     config: {
+      id: 'config-1',
       account_id: 'acc-1',
       user_id: 'user-1',
       evolution_instance_id: 'inst-1',
@@ -36,6 +37,7 @@ vi.mock('@supabase/supabase-js', () => ({
                   }),
               }),
             }),
+            update: () => ({ eq: () => Promise.resolve({ error: null }) }),
           }
         case 'contacts':
           return {
@@ -118,6 +120,7 @@ function inboundRequest(body: unknown) {
 describe('Evolution Go webhook route', () => {
   beforeEach(() => {
     h.state.config = {
+      id: 'config-1',
       account_id: 'acc-1',
       user_id: 'user-1',
       evolution_instance_id: 'inst-1',
@@ -241,7 +244,20 @@ describe('Evolution Go webhook route', () => {
     warnSpy.mockRestore()
   })
 
-  it('non-Message events (e.g. Connected) return 200 without inserting anything', async () => {
+  it('ignores other non-Message events (e.g. QRCode) without inserting anything', async () => {
+    const res = await POST(
+      inboundRequest({
+        event: 'QRCode',
+        instanceId: 'inst-1',
+        instanceToken: 'token',
+        data: { code: '2@abc' },
+      }),
+    )
+    expect((res as { init?: { status?: number } }).init?.status ?? 200).toBe(200)
+    expect(h.state.upsertCalls).toHaveLength(0)
+  })
+
+  it('marks the config connected on a Connected event', async () => {
     const res = await POST(
       inboundRequest({
         event: 'Connected',
@@ -251,6 +267,5 @@ describe('Evolution Go webhook route', () => {
       }),
     )
     expect((res as { init?: { status?: number } }).init?.status ?? 200).toBe(200)
-    expect(h.state.upsertCalls).toHaveLength(0)
   })
 })

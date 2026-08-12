@@ -6,10 +6,11 @@
  * value we stored for that `instanceId` to reject spoofed events
  * (the server is multi-tenant, so this is the tenant boundary).
  *
- * Only the `Message` event is handled in this v1 — `Connected` /
- * `PairSuccess` / `QRCode` connection-status events are handled by
- * the settings page polling `/api/whatsapp/config` (Task 5), not by
- * this route, keeping this file's scope to "a message arrived."
+ * `Message` events run the full inbound pipeline. `Connected` /
+ * `PairSuccess` mark the config row `connected` so the settings page
+ * (polling `/api/whatsapp/config`, Task 5) can reflect it. Every
+ * other event (e.g. `QRCode`) is ignored — the QR itself is fetched
+ * on demand via `/api/whatsapp/evolution/qr`, not pushed here.
  */
 import { NextResponse } from 'next/server'
 import { decrypt } from '@/lib/whatsapp/encryption'
@@ -122,9 +123,16 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Invalid instance token' }, { status: 401 })
   }
 
+  if (body.event === 'Connected' || body.event === 'PairSuccess') {
+    await supabaseAdmin()
+      .from('whatsapp_config')
+      .update({ status: 'connected', connected_at: new Date().toISOString() })
+      .eq('id', config.id)
+    return NextResponse.json({ status: 'ok' }, { status: 200 })
+  }
   if (body.event !== 'Message') {
-    // Connection/QR events: status is read on demand by the settings
-    // page (Task 5), not pushed through here in v1.
+    // Other connection/QR events: status is read on demand by the
+    // settings page (Task 5), not pushed through here in v1.
     return NextResponse.json({ status: 'ignored' }, { status: 200 })
   }
 
