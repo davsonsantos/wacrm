@@ -30,6 +30,10 @@ import {
   type MediaKind,
 } from '@/lib/whatsapp/meta-api';
 import {
+  sendTextMessage as evolutionSendTextMessage,
+  sendMediaMessage as evolutionSendMediaMessage,
+} from '@/lib/whatsapp/evolution-api';
+import {
   validateInteractivePayload,
   interactivePayloadPreviewText,
   type InteractiveMessagePayload,
@@ -266,10 +270,10 @@ export async function sendMessageToConversation(
     );
   }
 
-  const accessToken = decrypt(config.access_token);
+  const accessToken = config.provider === 'evolution' ? '' : decrypt(config.access_token);
 
   // Self-heal legacy CBC ciphertexts. Fire-and-forget; idempotent.
-  if (isLegacyFormat(config.access_token)) {
+  if (config.provider !== 'evolution' && isLegacyFormat(config.access_token)) {
     void db
       .from('whatsapp_config')
       .update({ access_token: encrypt(accessToken) })
@@ -337,6 +341,41 @@ export async function sendMessageToConversation(
   }
 
   const attempt = async (phone: string): Promise<string> => {
+    if (config.provider === 'evolution') {
+      if (messageType === 'template') {
+        throw new SendMessageError(
+          'provider_unsupported',
+          'Evolution Go não usa templates aprovados — envie como mensagem de texto.',
+          400,
+        );
+      }
+      if (messageType === 'interactive') {
+        throw new SendMessageError(
+          'provider_unsupported',
+          'Botões/listas interativos não são suportados pelo Evolution Go.',
+          400,
+        );
+      }
+      const instanceToken = decrypt(config.evolution_instance_token);
+      if (isMediaKind) {
+        const result = await evolutionSendMediaMessage({
+          instanceToken,
+          to: phone,
+          kind: messageType as MediaKind,
+          link: mediaUrl!,
+          caption: contentText || undefined,
+          filename: filename || undefined,
+        });
+        return result.messageId;
+      }
+      const result = await evolutionSendTextMessage({
+        instanceToken,
+        to: phone,
+        text: contentText!,
+      });
+      return result.messageId;
+    }
+
     if (messageType === 'template') {
       const result = await sendTemplateMessage({
         phoneNumberId: config.phone_number_id,
@@ -431,6 +470,11 @@ export async function sendMessageToConversation(
 
     if (lastError) throw lastError;
   } catch (err) {
+    // Errors we've already classified (e.g. the Evolution
+    // provider_unsupported guard above) carry their own code/status —
+    // propagate them as-is instead of relabeling as a generic send
+    // failure.
+    if (err instanceof SendMessageError) throw err;
     const message =
       err instanceof Error ? err.message : 'Unknown Meta API error';
     console.error('[send-message] Meta send failed for all variants:', message);
