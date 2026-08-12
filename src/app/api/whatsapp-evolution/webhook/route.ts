@@ -55,22 +55,42 @@ function phoneFromJid(jid: string): string {
   return jid.split('@')[0]
 }
 
-function normalizeContent(msg: EvolutionMessagePayload['Message']): {
+/**
+ * Media only carries a durable `mediaUrl` when the shared server runs
+ * with `WEBHOOK_FILES=false`. With the server's default
+ * (`WEBHOOK_FILES=true`), media arrives as inline base64 with no
+ * `url` field — that case is out of scope for v1 (no storage-upload
+ * path), so we warn and store `media_url: null` rather than silently
+ * dropping the attachment without a trace.
+ */
+function warnIfMediaMissingUrl(messageId: string, kind: string, url: string | undefined) {
+  if (!url) {
+    console.warn(
+      `[evolution-webhook] ${kind} message ${messageId} has no durable url (server likely has WEBHOOK_FILES=true) — storing media_url as null`,
+    )
+  }
+}
+
+function normalizeContent(msg: EvolutionMessagePayload['Message'], messageId: string): {
   contentType: 'text' | 'image' | 'video' | 'audio' | 'document'
   contentText: string | null
   mediaUrl: string | null
 } {
   if (!msg) return { contentType: 'text', contentText: null, mediaUrl: null }
   if (msg.imageMessage) {
+    warnIfMediaMissingUrl(messageId, 'image', msg.imageMessage.url)
     return { contentType: 'image', contentText: msg.imageMessage.caption ?? null, mediaUrl: msg.imageMessage.url ?? null }
   }
   if (msg.videoMessage) {
+    warnIfMediaMissingUrl(messageId, 'video', msg.videoMessage.url)
     return { contentType: 'video', contentText: msg.videoMessage.caption ?? null, mediaUrl: msg.videoMessage.url ?? null }
   }
   if (msg.audioMessage) {
+    warnIfMediaMissingUrl(messageId, 'audio', msg.audioMessage.url)
     return { contentType: 'audio', contentText: null, mediaUrl: msg.audioMessage.url ?? null }
   }
   if (msg.documentMessage) {
+    warnIfMediaMissingUrl(messageId, 'document', msg.documentMessage.url)
     return { contentType: 'document', contentText: msg.documentMessage.caption ?? null, mediaUrl: msg.documentMessage.url ?? null }
   }
   return { contentType: 'text', contentText: msg.conversation ?? null, mediaUrl: null }
@@ -129,7 +149,7 @@ export async function POST(request: Request) {
     })
   }
 
-  const { contentType, contentText, mediaUrl } = normalizeContent(payload.Message)
+  const { contentType, contentText, mediaUrl } = normalizeContent(payload.Message, payload.Info.ID)
 
   await ingestInboundMessage({
     accountId: config.account_id,

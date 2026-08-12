@@ -210,6 +210,37 @@ describe('Evolution Go webhook route', () => {
     expect(h.state.upsertCalls).toHaveLength(0)
   })
 
+  it('stores media_url as null and warns when the server only sent inline base64 (no durable url)', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const res = await POST(
+      inboundRequest({
+        event: 'Message',
+        instanceId: 'inst-1',
+        instanceToken: 'token',
+        data: {
+          Info: {
+            Chat: '5511999999999@s.whatsapp.net',
+            ID: 'wamid-3',
+            Type: 'image',
+            IsFromMe: false,
+            IsGroup: false,
+            PushName: 'Ana',
+            Timestamp: '2026-08-11T10:00:00-03:00',
+          },
+          Message: { imageMessage: { caption: 'olha isso', base64: 'iVBORw0KG...' } },
+        },
+      }),
+    )
+    expect((res as { init?: { status?: number } }).init?.status ?? 200).toBe(200)
+    expect(h.state.upsertCalls).toHaveLength(1)
+    expect(h.state.upsertCalls[0]).toMatchObject({
+      content_type: 'image',
+      media_url: null,
+    })
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('wamid-3'))
+    warnSpy.mockRestore()
+  })
+
   it('non-Message events (e.g. Connected) return 200 without inserting anything', async () => {
     const res = await POST(
       inboundRequest({
