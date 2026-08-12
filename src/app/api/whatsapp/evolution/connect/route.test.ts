@@ -8,6 +8,13 @@ const h = vi.hoisted(() => ({
   deleteCalls: [] as { col: string; val: string }[],
   accountId: 'acc-1' as string | null,
   authUser: { id: 'user-1' } as { id: string } | null,
+  // Controls what the account's existing whatsapp_config row (if any)
+  // looks like for both POST's instance-reuse lookup and DELETE's
+  // logout lookup. Null = no row yet (fresh account).
+  existingConfig: null as {
+    evolution_instance_id?: string
+    evolution_instance_token?: string
+  } | null,
 }))
 
 vi.mock('next/server', () => ({
@@ -41,12 +48,16 @@ function supabaseMock() {
           h.upsertCalls.push(row)
           return Promise.resolve({ error: null })
         },
-        select: () => ({
-          eq: () => ({
-            maybeSingle: () =>
-              Promise.resolve({ data: { evolution_instance_token: 'enc-raw-token' }, error: null }),
-          }),
-        }),
+        select: () => {
+          // Chainable across one or two `.eq()` calls — POST's
+          // instance-reuse lookup filters by account_id AND provider;
+          // DELETE's logout lookup filters by account_id alone.
+          const builder = {
+            eq: () => builder,
+            maybeSingle: () => Promise.resolve({ data: h.existingConfig, error: null }),
+          }
+          return builder
+        },
         delete: () => ({
           eq: (col: string, val: string) => {
             h.deleteCalls.push({ col, val })
@@ -73,9 +84,12 @@ describe('POST /api/whatsapp/evolution/connect', () => {
     h.upsertCalls = []
     h.accountId = 'acc-1'
     h.authUser = { id: 'user-1' }
+    h.existingConfig = null
+    h.createInstance.mockClear()
+    h.connectInstance.mockClear()
   })
 
-  it('creates an instance, connects it, and saves the config row', async () => {
+  it('creates a new instance for an account with none yet, connects it, and saves the config row', async () => {
     const res = await POST()
     expect((res as { init?: { status?: number } }).init?.status ?? 200).toBe(200)
     expect(h.createInstance).toHaveBeenCalledWith({ name: 'acc-1' })
@@ -90,6 +104,30 @@ describe('POST /api/whatsapp/evolution/connect', () => {
       provider: 'evolution',
       evolution_instance_id: 'inst-1',
       evolution_instance_token: 'enc-raw-token',
+      status: 'connecting',
+    })
+  })
+
+  it('reuses the existing instance instead of creating a new one ("Reconectar")', async () => {
+    h.existingConfig = {
+      evolution_instance_id: 'inst-existing',
+      evolution_instance_token: 'enc-existing-token',
+    }
+    const res = await POST()
+    expect((res as { init?: { status?: number } }).init?.status ?? 200).toBe(200)
+    // The whole point: retrying/reconnecting must never call
+    // createInstance again — that would orphan a live instance on the
+    // shared server with no local record of it (issue flagged in the
+    // final review as a Minor, now closed for real by this test).
+    expect(h.createInstance).not.toHaveBeenCalled()
+    expect(h.connectInstance).toHaveBeenCalledWith({
+      instanceToken: 'existing-token',
+      webhookUrl: expect.stringContaining('/api/whatsapp-evolution/webhook'),
+      subscribe: ['MESSAGE', 'CONNECTION', 'QRCODE'],
+    })
+    expect(h.upsertCalls[0]).toMatchObject({
+      evolution_instance_id: 'inst-existing',
+      evolution_instance_token: 'enc-existing-token',
       status: 'connecting',
     })
   })
@@ -114,6 +152,7 @@ describe('webhookUrl', () => {
     h.upsertCalls = []
     h.accountId = 'acc-1'
     h.authUser = { id: 'user-1' }
+    h.existingConfig = null
   })
 
   afterEach(() => {
@@ -132,6 +171,8 @@ describe('DELETE /api/whatsapp/evolution/connect', () => {
     h.deleteCalls = []
     h.accountId = 'acc-1'
     h.authUser = { id: 'user-1' }
+    h.existingConfig = { evolution_instance_token: 'enc-raw-token' }
+    h.logoutInstance.mockClear()
   })
 
   it('logs out the instance and deletes the config row, scoped to account_id AND provider', async () => {

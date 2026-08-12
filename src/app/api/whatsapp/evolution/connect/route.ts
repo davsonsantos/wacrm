@@ -17,11 +17,18 @@ function webhookUrl(): string {
 /**
  * POST /api/whatsapp/evolution/connect
  *
- * Creates a new Evolution Go instance for the caller's account, starts
- * the connect flow (registering our inbound webhook + event
- * subscriptions), and saves the encrypted instance token as the
- * account's whatsapp_config row. The settings page then polls
- * GET /api/whatsapp/evolution/qr for the QR to display.
+ * Starts (or restarts) the connect flow, registering our inbound
+ * webhook + event subscriptions, and saves the encrypted instance
+ * token as the account's whatsapp_config row. The settings page then
+ * polls GET /api/whatsapp/evolution/qr for the QR to display.
+ *
+ * If the account already has an Evolution instance on file (e.g. the
+ * phone unlinked the device and the user hit "Reconectar"), that same
+ * instance is reused — only `connectInstance` runs again, to restart
+ * pairing and refresh the QR. `createInstance` only runs for an
+ * account with no instance yet, so retrying/reconnecting never
+ * orphans a live instance on the shared server with no local record
+ * of it.
  */
 export async function POST() {
   const supabase = await createClient()
@@ -41,7 +48,24 @@ export async function POST() {
     )
   }
 
-  const { instanceId, instanceToken } = await createInstance({ name: accountId })
+  const { data: existing } = await supabase
+    .from('whatsapp_config')
+    .select('evolution_instance_id, evolution_instance_token')
+    .eq('account_id', accountId)
+    .eq('provider', 'evolution')
+    .maybeSingle()
+
+  let instanceId: string
+  let instanceToken: string
+  if (existing?.evolution_instance_id && existing.evolution_instance_token) {
+    instanceId = existing.evolution_instance_id
+    instanceToken = decrypt(existing.evolution_instance_token)
+  } else {
+    const created = await createInstance({ name: accountId })
+    instanceId = created.instanceId
+    instanceToken = created.instanceToken
+  }
+
   await connectInstance({
     instanceToken,
     webhookUrl: webhookUrl(),

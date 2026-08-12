@@ -93,6 +93,12 @@ export async function GET() {
         connected: config.status === 'connected',
         provider: 'evolution' as const,
         instance_name: config.evolution_instance_name ?? null,
+        // Raw status so the UI can tell "never connected" apart from
+        // "was connected, the phone unlinked" — both collapse to
+        // `connected: false` above, but only the latter should offer
+        // "Reconectar" (reuse the existing instance) instead of
+        // starting a brand new one.
+        status: config.status as 'connecting' | 'connected' | 'disconnected',
       })
     }
 
