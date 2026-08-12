@@ -1,5 +1,7 @@
 import type { createClient } from '@/lib/supabase/server'
 
+import { isUniqueViolation } from '@/lib/contacts/dedupe'
+
 type ScopedSupabase = Awaited<ReturnType<typeof createClient>>
 
 /**
@@ -35,6 +37,21 @@ export async function findOrCreateConversation(
     .single()
 
   if (error) {
+    // Lost a race against a concurrent create (e.g. an inbound webhook
+    // message arriving at the same moment) — the unique index (migration
+    // 036) rejected the duplicate. Re-resolve to the winning row instead
+    // of failing the caller.
+    if (isUniqueViolation(error)) {
+      const { data: raced } = await supabase
+        .from('conversations')
+        .select('id')
+        .eq('account_id', accountId)
+        .eq('contact_id', contactId)
+        .order('created_at', { ascending: true })
+        .limit(1)
+      if (raced && raced.length > 0) return raced[0].id
+    }
+
     console.error('Error creating conversation for contact:', error.message)
     return null
   }
