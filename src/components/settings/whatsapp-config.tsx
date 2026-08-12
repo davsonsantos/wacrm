@@ -24,6 +24,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Switch } from '@/components/ui/switch';
 import { SettingsPanelHead } from './settings-panel-head';
+import { EvolutionGoConfig } from './evolution-go-config';
 import {
   Accordion,
   AccordionItem,
@@ -59,6 +60,9 @@ export function WhatsAppConfig() {
   const [resetting, setResetting] = useState(false);
   const [showToken, setShowToken] = useState(false);
   const [config, setConfig] = useState<WhatsAppConfigType | null>(null);
+  const [provider, setProvider] = useState<'meta' | 'evolution'>(
+    config?.provider === 'evolution' ? 'evolution' : 'meta',
+  );
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('unknown');
   const [resetReason, setResetReason] = useState<ResetReason>(null);
   const [statusMessage, setStatusMessage] = useState<string>('');
@@ -132,6 +136,7 @@ export function WhatsAppConfig() {
 
       if (data) {
         setConfig(data);
+        setProvider(data.provider === 'evolution' ? 'evolution' : 'meta');
         setPhoneNumberId(data.phone_number_id || '');
         setWabaId(data.waba_id || '');
         setAccessToken(MASKED_TOKEN);
@@ -143,6 +148,7 @@ export function WhatsAppConfig() {
         setMirrorMedia(data.mirror_inbound_media !== false);
       } else {
         setConfig(null);
+        setProvider('meta');
         setPhoneNumberId('');
         setWabaId('');
         setAccessToken('');
@@ -437,6 +443,23 @@ export function WhatsAppConfig() {
         title={t("title")}
         description={t("description")}
       />
+      <div className="flex gap-2 border-b pb-4 mb-6">
+        <Button
+          variant={provider === 'meta' ? 'default' : 'outline'}
+          onClick={() => setProvider('meta')}
+        >
+          Meta Cloud API
+        </Button>
+        <Button
+          variant={provider === 'evolution' ? 'default' : 'outline'}
+          onClick={() => setProvider('evolution')}
+        >
+          Evolution Go (QR Code)
+        </Button>
+      </div>
+      {provider === 'evolution' ? (
+        <EvolutionGoConfig />
+      ) : (
       <div className="grid gap-6 lg:grid-cols-[1fr_380px]">
       {/* Main config form */}
       <div className="space-y-6">
@@ -916,6 +939,7 @@ export function WhatsAppConfig() {
         </Card>
       </div>
     </div>
+      )}
     </section>
   );
 }

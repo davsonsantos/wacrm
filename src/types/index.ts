@@ -292,6 +292,12 @@ export interface WhatsAppConfig {
   /** Last error from /register; cleared on success. */
   last_registration_error?: string;
   /**
+   * Which WhatsApp connection this row uses. Defaults to 'meta' in the
+   * database (migration 040_evolution_provider). 'evolution' rows use
+   * the evolution_instance_* columns instead of phone_number_id/etc.
+   */
+  provider?: 'meta' | 'evolution';
+  /**
    * When true (the default), the inbound webhook copies received media
    * into the `chat-media` bucket so attachments outlive Meta's ~30-day
    * retention. Turning it off keeps storage flat and accepts that

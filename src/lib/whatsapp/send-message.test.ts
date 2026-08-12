@@ -346,3 +346,121 @@ describe('sendMessageToConversation — template persistence (#483)', () => {
     expect(captured.conversation?.last_message_text).toBe('[template]');
   });
 });
+
+// ============================================================
+// Evolution Go provider branch
+// ============================================================
+
+vi.mock('@/lib/whatsapp/evolution-api', () => ({
+  sendTextMessage: vi.fn(async () => ({ messageId: 'evo.text.1' })),
+  sendMediaMessage: vi.fn(async () => ({ messageId: 'evo.media.1' })),
+}));
+
+import {
+  sendTextMessage as evolutionSendTextMessage,
+  sendMediaMessage as evolutionSendMediaMessage,
+} from '@/lib/whatsapp/evolution-api';
+
+/** Same shape as sendPathDb above, but the config row is Evolution Go's. */
+function sendPathDbEvolution(captured: CapturedWrites): SupabaseClient {
+  const conversation = {
+    id: 'cv-1',
+    contact: { id: 'ct-1', phone: '+15551234567' },
+  };
+  const config = {
+    id: 'cfg-1',
+    provider: 'evolution',
+    evolution_instance_token: 'evo-token',
+  };
+
+  return {
+    from(table: string) {
+      const builder: Record<string, unknown> = {
+        select: () => builder,
+        eq: () => builder,
+        insert: (row: Record<string, unknown>) => {
+          if (table === 'messages') captured.message = row;
+          return builder;
+        },
+        update: (row: Record<string, unknown>) => {
+          if (table === 'conversations') captured.conversation = row;
+          return builder;
+        },
+        maybeSingle: async () => ({ data: null, error: null }),
+        single: async () => {
+          if (table === 'conversations') return { data: conversation, error: null };
+          if (table === 'whatsapp_config') return { data: config, error: null };
+          if (table === 'messages') return { data: { id: 'msg-1' }, error: null };
+          return { data: null, error: null };
+        },
+        then: (resolve: (r: { data: unknown[]; error: null }) => unknown) =>
+          resolve({ data: [], error: null }),
+      };
+      return builder;
+    },
+  } as unknown as SupabaseClient;
+}
+
+describe('sendMessageToConversation — Evolution Go provider', () => {
+  it('sends a text message via evolution-api.sendTextMessage, not Meta', async () => {
+    const captured: CapturedWrites = {};
+    const result = await sendMessageToConversation(
+      sendPathDbEvolution(captured),
+      'acct-1',
+      { conversationId: 'cv-1', messageType: 'text', contentText: 'oi' }
+    );
+    expect(result.whatsappMessageId).toBe('evo.text.1');
+    // sanitizePhoneForMeta strips the '+' — see src/lib/whatsapp/phone-utils.ts.
+    expect(evolutionSendTextMessage).toHaveBeenCalledWith({
+      instanceToken: 'evo-token',
+      to: '15551234567',
+      text: 'oi',
+    });
+  });
+
+  it('sends a media message via evolution-api.sendMediaMessage', async () => {
+    const captured: CapturedWrites = {};
+    const result = await sendMessageToConversation(
+      sendPathDbEvolution(captured),
+      'acct-1',
+      {
+        conversationId: 'cv-1',
+        messageType: 'image',
+        mediaUrl: 'https://cdn.example.com/x.jpg',
+      }
+    );
+    expect(result.whatsappMessageId).toBe('evo.media.1');
+    expect(evolutionSendMediaMessage).toHaveBeenCalledWith({
+      instanceToken: 'evo-token',
+      to: '15551234567',
+      kind: 'image',
+      link: 'https://cdn.example.com/x.jpg',
+      caption: undefined,
+      filename: undefined,
+    });
+  });
+
+  it('rejects messageType "template" for an evolution provider with a clear error', async () => {
+    await expect(
+      sendMessageToConversation(sendPathDbEvolution({}), 'acct-1', {
+        conversationId: 'cv-1',
+        messageType: 'template',
+        templateName: 'order_update',
+      })
+    ).rejects.toMatchObject({ code: 'provider_unsupported' });
+  });
+
+  it('rejects messageType "interactive" for an evolution provider with a clear error', async () => {
+    await expect(
+      sendMessageToConversation(sendPathDbEvolution({}), 'acct-1', {
+        conversationId: 'cv-1',
+        messageType: 'interactive',
+        interactivePayload: {
+          kind: 'buttons',
+          body: 'Pick one',
+          buttons: [{ id: 'a', title: 'A' }],
+        },
+      })
+    ).rejects.toMatchObject({ code: 'provider_unsupported' });
+  });
+});
