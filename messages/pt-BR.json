@@ -15,7 +15,7 @@
     "createAccount": "Criar conta"
   },
   "Sidebar": {
-    "title": "CRM para WhatsApp",
+    "title": "CRM Davtech",
     "dashboard": "Painel",
     "inbox": "Caixa de entrada",
     "notifications": "Notificações",
@@ -27,8 +27,8 @@
     "aiAgents": "Agentes de IA",
     "settings": "Configurações",
     "beta": "Beta",
-    "unreadConversations": "{count} {count, plural, =1 {conversa não lida} other {conversas não lidas}}",
-    "unreadNotifications": "{count} {count, plural, =1 {notificação não lida} other {notificações não lidas}}",
+    "unreadConversations": "{count} {count, plural, =1 {conversa não lida} outras {conversas não lidas}}",
+    "unreadNotifications": "{count} {count, plural, =1 {notificação não lida} outras {notificações não lidas}}",
     "roleOwner": "Proprietário",
     "roleAdmin": "Administrador",
     "roleAgent": "Atendente",
@@ -384,9 +384,9 @@
         "custom": "Campos Personalizados",
         "deals": "Negócios",
         "tags": "Etiquetas",
-      "noTags": "Sem etiquetas",
-      "noDeals": "Sem negócios",
-      "addNotePlaceholder": "Adicionar uma anotação..."
+        "noTags": "Sem etiquetas",
+        "noDeals": "Sem negócios",
+        "addNotePlaceholder": "Adicionar uma anotação..."
       },
       "actions": {
         "edit": "Editar",
@@ -1369,13 +1369,11 @@
       "deleteLocallyAria": "Excluir modelo localmente",
       "deleteMetaLocallyTitle": "Excluir da Meta e localmente",
       "deleteLocallyTitle": "Excluir localmente",
-
       "dialogEditTitle": "Editar Modelo de Mensagem",
       "dialogNewTitle": "Novo Modelo de Mensagem",
       "dialogEditDesc": "Salve suas alterações para reenviar à Meta. O status voltará para PENDENTE durante a análise.",
       "dialogNewDesc": "Crie um modelo e envie-o para aprovação da Meta. Depois de aprovado, você pode usá-lo em disparos e na caixa de entrada.",
       "authWarning": "Modelos de AUTENTICAÇÃO têm corpo fixo + botão OTP com um formato que exige um construtor diferente. Crie-os no Meta WhatsApp Manager por enquanto e use <bold>Sincronizar da Meta</bold> para trazê-los.",
-
       "templateName": "Nome do Modelo",
       "namePlaceholder": "ex.: confirmacao_pedido",
       "nameFixed": "O nome é fixo depois que um modelo existe na Meta — crie um novo modelo para alterá-lo.",
@@ -1384,7 +1382,6 @@
       "language": "Idioma",
       "langFixed": "O idioma é fixo depois que um modelo existe na Meta.",
       "langHint": "Deve corresponder ao código exato da Meta — <code>pt_BR</code> e <code>pt</code> são distintos.",
-
       "header": "Cabeçalho",
       "headerNone": "Nenhum",
       "headerText": "Texto",
@@ -1394,7 +1391,6 @@
       "headerTextPlaceholder": "Texto do cabeçalho (máx. 60 caracteres, {{1}} opcional)",
       "headerSampleAria": "Valor de exemplo para a variável do cabeçalho",
       "headerSamplePlaceholder": "Valor de exemplo para {{1}} (obrigatório para análise da Meta)",
-
       "uploadImage": "Enviar imagem",
       "uploadHint": "JPEG ou PNG, ≤5 MB",
       "mediaUrlPlaceholder": "https://… (ou cole um link {format} público)",
@@ -1402,17 +1398,14 @@
       "mediaHint": "Deve ser um link HTTPS publicamente acessível. A Meta o acessa uma vez durante a análise, então ele precisa permanecer ativo por ~24 horas.",
       "videoHint": " Recomendado: MP4 / 3GPP, ≤16 MB, ≤60 segundos.",
       "documentHint": " Recomendado: PDF, ≤100 MB.",
-
       "bodyText": "Texto do Corpo",
       "bodyPlaceholder": "Olá {{1}}, seu pedido {{2}} está confirmado.",
       "bodyHint": "Use {{1}}, {{2}} para variáveis (devem ser contíguas começando em {{1}}).",
       "sampleValues": "Valores de exemplo (a Meta usa estes para analisar seu modelo)",
       "sampleAria": "Valor de exemplo para a variável do corpo {var}",
       "samplePlaceholder": "Exemplo para {var}",
-
       "footer": "Rodapé (opcional)",
       "footerPlaceholder": "Texto opcional do rodapé (máx. 60 caracteres)",
-
       "buttons": "Botões (opcional)",
       "addButton": "Adicionar Botão",
       "buttonsLimit": "Até {max} botões. Botões QUICK_REPLY (resposta rápida) devem vir antes dos botões de URL / telefone / copiar código.",
@@ -1425,19 +1418,16 @@
       "urlSamplePlaceholder": "Valor de exemplo para {{1}} (obrigatório quando a URL tem uma variável)",
       "phonePlaceholder": "+5511999999999",
       "codePlaceholder": "Código de exemplo (ex.: PROMO20)",
-
       "cancel": "Cancelar",
       "saving": "Salvando…",
       "submitting": "Enviando…",
       "saveResubmit": "Salvar e Reenviar",
       "submitApproval": "Enviar para Aprovação",
-
       "deleteDialogTitle": "Excluir modelo?",
       "deleteMetaDesc": "\"{name}\" será excluído da Meta e do wacrm. Disparos ativos que usam este modelo começarão a falhar no próximo envio. Isso não pode ser desfeito.",
       "deleteLocalDesc": "\"{name}\" será excluído do wacrm. Ele nunca foi enviado à Meta, então nenhuma limpeza remota é necessária.",
       "deleting": "Excluindo…",
       "delete": "Excluir",
-
       "toastLoadFailed": "Falha ao carregar modelos",
       "toastSubmitFailed": "Falha ao enviar",
       "toastSubmitEditSuccess": "Edição enviada — a Meta normalmente analisa em até 24 horas.",
@@ -1577,7 +1567,6 @@
       "profileSaved": "Perfil salvo",
       "emailChangeFailed": "Falha na alteração de e-mail: {message}",
       "profileSavedEmailCheck": "Perfil salvo — verifique seu e-mail para confirmar a alteração do endereço",
-
       "passwordTitle": "Senha",
       "passwordDesc": "Use pelo menos {min} caracteres. Você permanecerá conectado neste dispositivo após alterá-la.",
       "currentPassword": "Senha atual",
@@ -1591,7 +1580,6 @@
       "currentPasswordIncorrect": "A senha atual está incorreta",
       "passwordUpdateFailed": "Falha ao atualizar a senha: {message}",
       "passwordUpdated": "Senha atualizada",
-
       "sessionsTitle": "Sessões ativas",
       "sessionsDesc": "Saia de todos os dispositivos onde você está conectado — incluindo este. Útil se você perdeu um notebook ou compartilhou sua senha.",
       "signOutAll": "Sair de todos os dispositivos",
