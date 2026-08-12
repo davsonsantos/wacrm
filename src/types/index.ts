@@ -226,6 +226,12 @@ export interface Message {
   content_type: ContentType;
   content_text?: string;
   media_url?: string;
+  /**
+   * MIME type of `media_url`'s content, as Meta reported it. Inbound
+   * media only — outbound URLs already carry a filename and extension.
+   * Null on every row written before migration 039.
+   */
+  media_type?: string | null;
   template_name?: string;
   message_id?: string;
   status: MessageStatus;
@@ -285,6 +291,13 @@ export interface WhatsAppConfig {
   subscribed_apps_at?: string;
   /** Last error from /register; cleared on success. */
   last_registration_error?: string;
+  /**
+   * When true (the default), the inbound webhook copies received media
+   * into the `chat-media` bucket so attachments outlive Meta's ~30-day
+   * retention. Turning it off keeps storage flat and accepts that
+   * inbound attachments expire. Migration 039.
+   */
+  mirror_inbound_media?: boolean;
 }
 
 // Raw Meta status enum. We persist this verbatim from Meta (sync + webhook)
