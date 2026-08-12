@@ -329,6 +329,7 @@
       "unnamed": "Unnamed",
       "sendMessageAction": "Send message",
       "sendMessageGated": "Read-only — your role can't send messages",
+      "sendMessageFailed": "Failed to open conversation",
       "editAction": "Edit",
       "deleteAction": "Delete",
       "showingPagination": "Showing {start}-{end} of {total}",

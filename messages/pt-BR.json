@@ -329,6 +329,7 @@
       "unnamed": "Sem nome",
       "sendMessageAction": "Enviar mensagem",
       "sendMessageGated": "Somente leitura — sua função não pode enviar mensagens",
+      "sendMessageFailed": "Falha ao abrir a conversa",
       "editAction": "Editar",
       "deleteAction": "Excluir",
       "showingPagination": "Mostrando {start}-{end} de {total}",

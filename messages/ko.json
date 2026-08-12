@@ -329,6 +329,7 @@
       "unnamed": "이름 없음",
       "sendMessageAction": "메시지 보내기",
       "sendMessageGated": "읽기 전용 — 현재 역할로는 메시지를 보낼 수 없습니다",
+      "sendMessageFailed": "대화를 열지 못했습니다",
       "editAction": "수정",
       "deleteAction": "삭제",
       "showingPagination": "전체 {total}개 중 {start}-{end}",

@@ -259,12 +259,12 @@ export default function ContactsPage() {
       });
       const body = await res.json();
       if (!res.ok) {
-        throw new Error(body.error || 'Failed to open conversation');
+        throw new Error(body.error || t('sendMessageFailed'));
       }
       router.push(`/inbox?c=${body.conversation_id}`);
     } catch (err) {
       toast.error(
-        err instanceof Error ? err.message : 'Failed to open conversation',
+        err instanceof Error ? err.message : t('sendMessageFailed'),
       );
     }
   }
