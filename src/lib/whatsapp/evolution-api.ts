@@ -136,7 +136,7 @@ export async function getQrCode(args: { instanceToken: string }): Promise<GetQrC
     await throwEvolutionError(response, `Evolution Go API error: ${response.status}`)
   }
   const { data } = await response.json()
-  return { qrCodePng: data.Qrcode, code: data.Code }
+  return { qrCodePng: data.qrcode, code: data.code }
 }
 
 export interface GetInstanceStatusResult {

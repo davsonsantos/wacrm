@@ -90,10 +90,13 @@ describe("evolution-api", () => {
   });
 
   it("getQrCode returns the base64 PNG and raw code", async () => {
+    // Confirmed against the real server: unlike /instance/status
+    // (Connected/LoggedIn/Name, capitalized), /instance/qr's response
+    // uses lowercase keys.
     vi.stubGlobal(
       "fetch",
       okFetch({
-        data: { Qrcode: "data:image/png;base64,AAA", Code: "2@abc" },
+        data: { qrcode: "data:image/png;base64,AAA", code: "2@abc" },
         message: "success",
       }),
     );
